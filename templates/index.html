@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KL ERP Live Internals Calculator</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --surface: #121931;
+      --surface-2: #192344;
+      --border: rgba(148, 163, 184, 0.16);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(circle at top right, #172554 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .container { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; }
+    header { margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 1.65rem; letter-spacing: -0.02em; }
+    .subtitle { color: var(--muted); font-size: 0.92rem; margin-top: 4px; }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px;
+      margin-bottom: 24px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    input, select {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    .captcha-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .captcha-box img {
+      height: 42px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+    }
+    button {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: linear-gradient(135deg, #0284c7, #4f46e5);
+      border-color: transparent;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error-msg {
+      margin-top: 12px;
+      color: var(--danger);
+      font-size: 0.88rem;
+      display: none;
+    }
+
+    .course-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      margin-bottom: 18px;
+      overflow: hidden;
+    }
+    .course-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+    }
+    .course-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .code-badge {
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 3px 9px;
+      border-radius: 7px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+    .course-name { font-weight: 700; font-size: 1.02rem; }
+    .course-score { display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
+    .course-score .big { font-size: 1.35rem; font-weight: 700; color: var(--good); }
+    .course-score .denom { color: var(--muted); font-size: 0.88rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 11px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.08); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; }
+    .pill-formative { background: rgba(129, 140, 248, 0.15); color: #a5b4fc; }
+    .pill-summative { background: rgba(56, 189, 248, 0.15); color: #7dd3fc; }
+    .pill-missing { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+    .pill-ok { background: rgba(52, 211, 153, 0.15); color: var(--good); }
+    input.raw-input { width: 110px; text-align: right; padding: 6px 9px; font-size: 0.88rem; }
+    input.raw-input::placeholder { color: #64748b; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>KL ERP Live Internals Calculator</h1>
+      <div class="subtitle">
+        Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored).
+      </div>
+    </header>
+
+    <div class="login-card">
+      <form id="fetchForm" onsubmit="submitFetch(event)">
+        <div class="form-grid">
+          <div>
+            <label for="username">Student ID</label>
+            <input id="username" type="text" placeholder="e.g. 2400040006" required />
+          </div>
+          <div>
+            <label for="password">KL ERP Password</label>
+            <input id="password" type="password" placeholder="Enter password" required />
+          </div>
+          <div>
+            <label for="academicYear">Academic Year</label>
+            <input id="academicYear" type="text" value="2026-2027" required />
+          </div>
+          <div>
+            <label for="semester">Semester</label>
+            <select id="semester">
+              <option value="Odd Sem">Odd Sem</option>
+              <option value="Even Sem">Even Sem</option>
+              <option value="Summer Term">Summer Term</option>
+            </select>
+          </div>
+          <div>
+            <label>Verification Code (CAPTCHA)</label>
+            <div class="captcha-box">
+              <img id="captchaImg" alt="CAPTCHA" />
+              <button type="button" onclick="loadCaptcha()">Refresh</button>
+            </div>
+          </div>
+          <div>
+            <label for="captcha">Enter CAPTCHA</label>
+            <input id="captcha" type="text" placeholder="Type code" required />
+          </div>
+          <div>
+            <button id="submitBtn" class="primary" type="submit" style="width: 100%;">Fetch &amp; Calculate</button>
+          </div>
+        </div>
+        <div class="error-msg" id="errorMsg"></div>
+      </form>
+    </div>
+
+    <div id="resultsHeader" style="display:none; margin-bottom: 14px; color: var(--muted); font-size: 0.92rem;"></div>
+    <div id="coursesContainer"></div>
+  </div>
+
+  <script>
+    let currentSessionId = null;
+    let loadedCourses = [];
+
+    async function loadCaptcha() {
+      const errEl = document.getElementById('errorMsg');
+      errEl.style.display = 'none';
+      try {
+        const res = await fetch('/api/captcha');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load CAPTCHA');
+        currentSessionId = data.session_id;
+        document.getElementById('captchaImg').src = data.captcha_url;
+        document.getElementById('captcha').value = '';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      }
+    }
+
+    async function submitFetch(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const errEl = document.getElementById('errorMsg');
+      errEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Fetching from KL ERP...';
+
+      try {
+        const res = await fetch('/api/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: currentSessionId,
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+            captcha: document.getElementById('captcha').value,
+            academic_year: document.getElementById('academicYear').value,
+            semester: document.getElementById('semester').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          await loadCaptcha();
+          throw new Error(data.error || 'Failed to fetch internals');
+        }
+        loadedCourses = data.courses || [];
+        document.getElementById('resultsHeader').style.display = 'block';
+        document.getElementById('resultsHeader').textContent =
+          `Showing ${loadedCourses.length} credited courses for ${data.student_id} (${data.academic_year} · ${data.semester})`;
+        renderCourses();
+        await loadCaptcha();
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Fetch & Calculate';
+      }
+    }
+
+    function parseRawMarks(input) {
+      const str = String(input ?? '').trim();
+      if (!str) return null;
+      const parts = str.split(/[\s,]+/).map(Number).filter(n => !Number.isNaN(n) && n >= 0);
+      return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+    }
+
+    function updateRaw(ci, ri, value) {
+      loadedCourses[ci].components[ri].raw = parseRawMarks(value);
+      renderCourses();
+    }
+
+    function renderCourses() {
+      const html = loadedCourses.map((course, ci) => {
+        let earned = 0, uploadedWeight = 0, totalWeight = 0;
+        for (const c of course.components) {
+          totalWeight += c.weight;
+          if (c.raw !== null && c.raw !== '' && Number(c.raw) >= 0) {
+            earned += (Number(c.raw) / c.maxMarks) * c.weight;
+            uploadedWeight += c.weight;
+          }
+        }
+
+        const rows = course.components.map((comp, ri) => {
+          const hasRaw = comp.raw !== null && comp.raw !== '' && Number(comp.raw) >= 0;
+          const weighted = hasRaw ? ((Number(comp.raw) / comp.maxMarks) * comp.weight).toFixed(2) : '—';
+          const statusBadge = hasRaw
+            ? '<span class="pill pill-ok">Uploaded</span>'
+            : '<span class="pill pill-missing">Not uploaded</span>';
+          const typeBadge = comp.type === 'Formative'
+            ? '<span class="pill pill-formative">Formative</span>'
+            : '<span class="pill pill-summative">Summative</span>';
+
+          return `
+            <tr>
+              <td>${comp.name}</td>
+              <td>${typeBadge}</td>
+              <td class="num">${comp.maxMarks}</td>
+              <td class="num">${comp.weight}</td>
+              <td class="num">
+                <input class="raw-input" type="text" value="${hasRaw ? comp.raw : ''}" placeholder="Not uploaded" onchange="updateRaw(${ci}, ${ri}, this.value)" />
+              </td>
+              <td class="num"><strong>${weighted}</strong></td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <div class="course-card">
+            <div class="course-header">
+              <div class="course-title">
+                <span class="code-badge">${course.code}</span>
+                <span class="course-name">${course.name}</span>
+              </div>
+              <div class="course-score">
+                <span class="big">${earned.toFixed(2)}</span>
+                <span class="denom">/ ${uploadedWeight} uploaded (${totalWeight} total internal)</span>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Evaluation Component</th>
+                  <th>Type</th>
+                  <th class="num">Max Marks</th>
+                  <th class="num">Weightage</th>
+                  <th class="num">Raw Marks</th>
+                  <th class="num">Weighted</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('coursesContainer').innerHTML = html;
+    }
+
+    loadCaptcha();
+  </script>
+</body>
+</html>
