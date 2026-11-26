@@ -98,15 +98,41 @@ def submit_year_sem_form(session, url, academic_year, semester):
     return BeautifulSoup(r2.text, "html.parser")
 
 
+def expand_table_rows(table):
+    """Expand rowspan/colspan into a normalized 2D list of cell texts."""
+    grid = []
+    spans = {}  # (row_idx, col_idx) -> text
+    rows = table.find_all("tr")
+    for r_idx, tr in enumerate(rows):
+        row_cells = []
+        c_idx = 0
+        for cell in tr.find_all(["th", "td"]):
+            while (r_idx, c_idx) in spans:
+                row_cells.append(spans.pop((r_idx, c_idx)))
+                c_idx += 1
+            text = cell.get_text(" ", strip=True)
+            rowspan = int(cell.get("rowspan") or 1)
+            colspan = int(cell.get("colspan") or 1)
+            for dc in range(colspan):
+                row_cells.append(text)
+                for dr in range(1, rowspan):
+                    spans[(r_idx + dr, c_idx + dc)] = text
+            c_idx += colspan
+        while (r_idx, c_idx) in spans:
+            row_cells.append(spans.pop((r_idx, c_idx)))
+            c_idx += 1
+        grid.append(row_cells)
+    return grid
+
+
 def parse_evaluation_plan(handout_soup):
     """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
     components = {}
     for table in handout_soup.find_all("table"):
-        headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
-        if not headers:
-            first_row = table.find("tr")
-            if first_row:
-                headers = [c.get_text(strip=True).lower() for c in first_row.find_all(["th", "td"])]
+        grid = expand_table_rows(table)
+        if len(grid) < 2:
+            continue
+        headers = [h.lower() for h in grid[0]]
         if not any("evaluation component" in h for h in headers):
             continue
 
@@ -117,8 +143,7 @@ def parse_evaluation_plan(handout_soup):
         if idx_comp is None or idx_metric is None or idx_val is None:
             continue
 
-        for tr in table.find_all("tr")[1:]:
-            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+        for cells in grid[1:]:
             if len(cells) <= max(idx_comp, idx_metric, idx_val):
                 continue
             eval_type = cells[idx_type] if idx_type is not None and idx_type < len(cells) else ""
@@ -199,10 +224,17 @@ def fetch_handouts_map(session, academic_year, semester):
         code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{2,5}[0-9]{2,4}[A-Z0-9]*$", t)), None)
         if not code:
             continue
+        raw_href = ""
         link = tr.find("a", href=True) or tr.find(attrs={"data-url": True})
-        if not link:
-            continue
-        raw_href = link.get("href") or link.get("data-url") or ""
+        if link:
+            raw_href = link.get("href") or link.get("data-url") or ""
+        if not raw_href or raw_href == "#":
+            for el in tr.find_all(["a", "button", "span"]):
+                oc = el.get("onclick") or ""
+                m = re.search(r"(index\.php\?[^'\"\s\)]+)", oc)
+                if m:
+                    raw_href = m.group(1)
+                    break
         if not raw_href or raw_href == "#":
             continue
         handout_url = urljoin(HANDOUTS_URL, raw_href)
@@ -369,14 +401,12 @@ def fetch_internals():
         if not courses:
             h_soup = submit_year_sem_form(sess, HANDOUTS_URL, academic_year, semester)
             i_soup = submit_year_sem_form(sess, INTERNALS_URL, academic_year, semester)
+            h_rows = h_soup.find_all("tr")
             debug_info = {
                 "handout_courses_parsed": list(handouts_map.keys()),
-                "handout_rows": len(h_soup.find_all("tr")),
+                "handout_rows": len(h_rows),
                 "internal_rows": len(i_soup.find_all("tr")),
-                "handout_selects": [
-                    {s.get("name"): [o.get_text(strip=True) for o in s.find_all("option")[:6]]}
-                    for s in h_soup.find_all("select")
-                ],
+                "sample_handout_row": str(h_rows[1])[:400] if len(h_rows) > 1 else None,
             }
 
         return jsonify(
