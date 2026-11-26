@@ -341,6 +341,43 @@
     }
     .print-only { display: none; }
 
+    .terminal-box {
+      display: none;
+      margin-top: 14px;
+      background: #050811;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      color: #cbd5e1;
+      max-height: 210px;
+      overflow-y: auto;
+    }
+    .terminal-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+      font-size: 0.74rem;
+      color: #94a3b8;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .terminal-line { white-space: pre-wrap; word-break: break-word; }
+    .terminal-line.ok { color: #34d399; }
+    .terminal-cursor {
+      display: inline-block;
+      width: 7px;
+      height: 13px;
+      background: #38bdf8;
+      vertical-align: middle;
+      animation: blink 0.9s steps(2, start) infinite;
+    }
+    @keyframes blink { to { opacity: 0; } }
+
     @media print {
       body { background: #fff !important; color: #0f172a !important; }
       .bg-orbs, .quick-links, .login-card, #themeToggle, .banner-actions, #fetchTimerBar { display: none !important; }
@@ -377,7 +414,7 @@
       <div>
         <h1>KL ERP Live Internals Calculator</h1>
         <div class="subtitle">
-          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v18</span>
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v19</span>
         </div>
       </div>
       <button id="themeToggle" type="button" onclick="toggleTheme()" style="white-space:nowrap;">Light Mode</button>
@@ -434,6 +471,16 @@
           </div>
         </div>
         <div id="fetchTimerBar" style="display:none; margin-top: 12px; font-size: 0.86rem; color: var(--accent); font-variant-numeric: tabular-nums;"></div>
+        <div class="terminal-box" id="liveTerminal">
+          <div class="terminal-head">
+            <span class="dot" style="background:#f87171;"></span>
+            <span class="dot" style="background:#fbbf24;"></span>
+            <span class="dot" style="background:#34d399;"></span>
+            <span style="margin-left:4px;">kl-erp-live-fetch.log</span>
+          </div>
+          <div id="terminalLines"></div>
+          <span class="terminal-cursor" id="terminalCursor"></span>
+        </div>
         <div class="error-msg" id="errorMsg"></div>
       </form>
     </div>
@@ -503,28 +550,43 @@
     }
     applyTheme(localStorage.getItem('kl_theme') || 'dark');
 
+    function appendTerm(msg, isOk = false) {
+      const box = document.getElementById('liveTerminal');
+      const lines = document.getElementById('terminalLines');
+      const div = document.createElement('div');
+      div.className = 'terminal-line' + (isOk ? ' ok' : '');
+      div.textContent = '> ' + msg;
+      lines.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
     async function submitFetch(e) {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
       const btnLabel = document.getElementById('btnLabel');
       const errEl = document.getElementById('errorMsg');
       const timerBar = document.getElementById('fetchTimerBar');
+      const termBox = document.getElementById('liveTerminal');
+      const termLines = document.getElementById('terminalLines');
+      const termCursor = document.getElementById('terminalCursor');
+
       errEl.style.display = 'none';
       timerBar.style.display = 'block';
+      termBox.style.display = 'block';
+      termLines.innerHTML = '';
+      termCursor.style.display = 'inline-block';
       btn.disabled = true;
       btn.classList.add('loading');
 
       const fetchStart = performance.now();
-      let stepIdx = 0;
       loadingTimer = setInterval(() => {
         const secs = ((performance.now() - fetchStart) / 1000).toFixed(1);
-        stepIdx = Math.min(LOADING_STEPS.length - 1, Math.floor((performance.now() - fetchStart) / 1800));
         btnLabel.textContent = `Fetching (${secs}s)...`;
-        timerBar.textContent = `${LOADING_STEPS[stepIdx]} · Elapsed: ${secs}s`;
+        timerBar.textContent = `Live Fetch Elapsed: ${secs}s`;
       }, 100);
 
       try {
-        const res = await fetch('/api/fetch', {
+        const res = await fetch('/api/fetch-stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -536,23 +598,47 @@
             semester: document.getElementById('semester').value,
           }),
         });
-        const data = await res.json();
-        if (!res.ok) {
-          await loadCaptcha();
-          throw new Error(data.error || 'Failed to fetch internals');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let finalData = null;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split('\n');
+          buf = parts.pop();
+          for (const line of parts) {
+            if (!line.trim()) continue;
+            const evt = JSON.parse(line);
+            if (evt.type === 'log') {
+              appendTerm(evt.msg, evt.msg.includes('Done!'));
+            } else if (evt.type === 'error') {
+              await loadCaptcha();
+              throw new Error(evt.error || 'Failed to fetch internals');
+            } else if (evt.type === 'done') {
+              finalData = evt;
+            }
+          }
         }
+
+        if (!finalData) throw new Error('Stream ended unexpectedly.');
         const totalSecs = ((performance.now() - fetchStart) / 1000).toFixed(1);
-        timerBar.textContent = `Fetched ${data.courses.length} courses in ${totalSecs}s`;
-        loadedCourses = data.courses || [];
-        loadedMeta = { student_id: data.student_id, academic_year: data.academic_year, semester: data.semester };
+        timerBar.textContent = `Fetched ${finalData.courses.length} courses in ${totalSecs}s`;
+        loadedCourses = finalData.courses || [];
+        loadedMeta = { student_id: finalData.student_id, academic_year: finalData.academic_year, semester: finalData.semester };
         renderCourses(loadedMeta);
         await loadCaptcha();
       } catch (err) {
+        appendTerm('ERROR: ' + err.message);
         timerBar.style.display = 'none';
         errEl.textContent = err.message;
         errEl.style.display = 'block';
       } finally {
         clearInterval(loadingTimer);
+        termCursor.style.display = 'none';
         btn.disabled = false;
         btn.classList.remove('loading');
         btnLabel.textContent = 'Fetch & Calculate';

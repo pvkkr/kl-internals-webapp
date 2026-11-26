@@ -1,13 +1,15 @@
 import base64
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 import os
 import re
+import time
 from urllib.parse import urljoin
 
 import requests
 from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 app = Flask(__name__)
@@ -476,6 +478,96 @@ def fetch_internals():
         )
     except requests.RequestException as exc:
         return jsonify({"error": f"Error communicating with KL ERP: {exc}"}), 502
+
+
+@app.route("/api/fetch-stream", methods=["POST"])
+def fetch_internals_stream():
+    data = request.get_json(silent=True) or {}
+    sid = data.get("session_id", "")
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    captcha = (data.get("captcha") or "").strip()
+    academic_year = (data.get("academic_year") or "2026-2027").strip()
+    semester = (data.get("semester") or "Odd Sem").strip()
+
+    def _event(kind, payload):
+        return json.dumps({"type": kind, **payload}) + "\n"
+
+    def generate():
+        t0 = time.time()
+        def ts():
+            return f"{time.time() - t0:.1f}s"
+
+        if not sid:
+            yield _event("error", {"error": "Missing session token. Please refresh the CAPTCHA and try again."})
+            return
+        try:
+            entry = SERIALIZER.loads(sid, max_age=SESSION_TTL_SECONDS)
+        except (BadSignature, SignatureExpired):
+            yield _event("error", {"error": "CAPTCHA expired. Please refresh the CAPTCHA and try again."})
+            return
+        if not username or not password or not captcha:
+            yield _event("error", {"error": "Student ID, password, and CAPTCHA are required."})
+            return
+
+        sess = requests.Session()
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        sess.mount("https://", adapter)
+        sess.mount("http://", adapter)
+        sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+        for ck, cv in entry.get("cookies", {}).items():
+            sess.cookies.set(ck, cv, domain="newerp.kluniversity.in", path="/")
+
+        try:
+            yield _event("log", {"msg": f"[{ts()}] Authenticating {username} with newerp.kluniversity.in..."})
+            login_payload = {
+                "_csrf": entry["csrf"],
+                "LoginForm[username]": username,
+                "LoginForm[password]": password,
+                "LoginForm[captcha]": captcha,
+                "LoginForm[qr_code]": "",
+                "login-button": "",
+            }
+            login_resp = sess.post(
+                entry["login_post_url"],
+                data=login_payload,
+                headers={"Referer": LOGIN_URL, "Origin": BASE_URL},
+                timeout=20,
+                allow_redirects=True,
+            )
+            login_soup = BeautifulSoup(login_resp.text, "html.parser")
+            if login_soup.find("input", {"name": "LoginForm[username]"}):
+                errs = [el.get_text(" ", strip=True) for el in login_soup.select(".help-block, .help-block-error, .alert-danger, .error-summary") if el.get_text(strip=True)]
+                err_msg = " | ".join(dict.fromkeys(errs)) if errs else f"Login returned {login_resp.status_code} ({login_resp.url})"
+                yield _event("error", {"error": err_msg})
+                return
+
+            yield _event("log", {"msg": f"[{ts()}] Login verified! Fetching Handouts & Internals lists..."})
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                f_h = pool.submit(submit_year_sem_form, sess, HANDOUTS_URL, academic_year, semester)
+                f_i = pool.submit(submit_year_sem_form, sess, INTERNALS_URL, academic_year, semester)
+                h_soup = f_h.result()
+                i_soup = f_i.result()
+
+            yield _event("log", {"msg": f"[{ts()}] Extracting Evaluation Plans from Course Handouts in parallel..."})
+            handouts_map = fetch_handouts_map(sess, academic_year, semester, preloaded_soup=h_soup)
+            for code, plan in handouts_map.items():
+                yield _event("log", {"msg": f"[{ts()}] Loaded Handout {code} ({len(plan)} internal components)"})
+
+            yield _event("log", {"msg": f"[{ts()}] Fetching & summing internal mark tables (ignoring -1/-2)..."})
+            courses = fetch_internals_data(sess, academic_year, semester, handouts_map, preloaded_soup=i_soup)
+
+            yield _event("log", {"msg": f"[{ts()}] Done! {len(courses)} credited courses calculated. Session wiped from RAM."})
+            yield _event("done", {
+                "student_id": username,
+                "academic_year": academic_year,
+                "semester": semester,
+                "courses": courses,
+            })
+        except requests.RequestException as exc:
+            yield _event("error", {"error": f"Error communicating with KL ERP: {exc}"})
+
+    return Response(stream_with_context(generate()), mimetype="application/x-ndjson")
 
 
 if __name__ == "__main__":
