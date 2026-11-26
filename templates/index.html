@@ -9,6 +9,7 @@
       --bg: #070b16;
       --surface: rgba(18, 25, 49, 0.86);
       --surface-2: #192344;
+      --input-bg: rgba(7, 11, 22, 0.85);
       --border: rgba(148, 163, 184, 0.18);
       --text: #e2e8f0;
       --muted: #94a3b8;
@@ -17,6 +18,22 @@
       --good: #34d399;
       --warn: #fbbf24;
       --danger: #f87171;
+      --orb-opacity: 0.28;
+    }
+    body.light {
+      --bg: #f1f5f9;
+      --surface: rgba(255, 255, 255, 0.92);
+      --surface-2: #e2e8f0;
+      --input-bg: #ffffff;
+      --border: rgba(15, 23, 42, 0.12);
+      --text: #0f172a;
+      --muted: #475569;
+      --accent: #0284c7;
+      --accent-2: #4f46e5;
+      --good: #059669;
+      --warn: #d97706;
+      --danger: #dc2626;
+      --orb-opacity: 0.14;
     }
     * { box-sizing: border-box; }
     body {
@@ -27,6 +44,7 @@
       min-height: 100vh;
       line-height: 1.5;
       overflow-x: hidden;
+      transition: background 0.3s ease, color 0.3s ease;
     }
 
     /* Animated ambient background */
@@ -41,7 +59,7 @@
       position: absolute;
       border-radius: 999px;
       filter: blur(80px);
-      opacity: 0.28;
+      opacity: var(--orb-opacity);
       animation: floatOrb 14s ease-in-out infinite alternate;
     }
     .orb-1 { width: 380px; height: 380px; background: #0284c7; top: -120px; right: -80px; }
@@ -70,7 +88,7 @@
       margin: 0;
       font-size: clamp(1.45rem, 3vw, 1.85rem);
       letter-spacing: -0.02em;
-      background: linear-gradient(90deg, #f8fafc, #7dd3fc, #a5b4fc);
+      background: linear-gradient(90deg, var(--text), var(--accent), var(--accent-2));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -135,13 +153,13 @@
     }
     input, select {
       width: 100%;
-      background: rgba(7, 11, 22, 0.85);
+      background: var(--input-bg);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 10px 12px;
       font-size: 0.9rem;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.3s;
     }
     input:focus, select:focus {
       outline: none;
@@ -319,9 +337,10 @@
       <div>
         <h1>KL ERP Live Internals Calculator</h1>
         <div class="subtitle">
-          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v16</span>
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v17</span>
         </div>
       </div>
+      <button id="themeToggle" type="button" onclick="toggleTheme()" style="white-space:nowrap;">Light Mode</button>
     </header>
 
     <div class="quick-links">
@@ -338,7 +357,7 @@
         <div class="form-grid">
           <div>
             <label for="username">Student ID</label>
-            <input id="username" type="text" placeholder="e.g. 2400040006" required />
+            <input id="username" type="text" placeholder="Enter your Student ID" required />
           </div>
           <div>
             <label for="password">KL ERP Password</label>
@@ -374,6 +393,7 @@
             </button>
           </div>
         </div>
+        <div id="fetchTimerBar" style="display:none; margin-top: 12px; font-size: 0.86rem; color: var(--accent); font-variant-numeric: tabular-nums;"></div>
         <div class="error-msg" id="errorMsg"></div>
       </form>
     </div>
@@ -414,21 +434,36 @@
       }
     }
 
+    function applyTheme(theme) {
+      document.body.classList.toggle('light', theme === 'light');
+      document.getElementById('themeToggle').textContent = theme === 'light' ? 'Dark Mode' : 'Light Mode';
+    }
+    function toggleTheme() {
+      const next = document.body.classList.contains('light') ? 'dark' : 'light';
+      localStorage.setItem('kl_theme', next);
+      applyTheme(next);
+    }
+    applyTheme(localStorage.getItem('kl_theme') || 'dark');
+
     async function submitFetch(e) {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
       const btnLabel = document.getElementById('btnLabel');
       const errEl = document.getElementById('errorMsg');
+      const timerBar = document.getElementById('fetchTimerBar');
       errEl.style.display = 'none';
+      timerBar.style.display = 'block';
       btn.disabled = true;
       btn.classList.add('loading');
 
+      const fetchStart = performance.now();
       let stepIdx = 0;
-      btnLabel.textContent = LOADING_STEPS[0];
       loadingTimer = setInterval(() => {
-        stepIdx = (stepIdx + 1) % LOADING_STEPS.length;
-        btnLabel.textContent = LOADING_STEPS[stepIdx];
-      }, 1600);
+        const secs = ((performance.now() - fetchStart) / 1000).toFixed(1);
+        stepIdx = Math.min(LOADING_STEPS.length - 1, Math.floor((performance.now() - fetchStart) / 1800));
+        btnLabel.textContent = `Fetching (${secs}s)...`;
+        timerBar.textContent = `${LOADING_STEPS[stepIdx]} · Elapsed: ${secs}s`;
+      }, 100);
 
       try {
         const res = await fetch('/api/fetch', {
@@ -448,10 +483,13 @@
           await loadCaptcha();
           throw new Error(data.error || 'Failed to fetch internals');
         }
+        const totalSecs = ((performance.now() - fetchStart) / 1000).toFixed(1);
+        timerBar.textContent = `Fetched ${data.courses.length} courses in ${totalSecs}s`;
         loadedCourses = data.courses || [];
         renderCourses(data);
         await loadCaptcha();
       } catch (err) {
+        timerBar.style.display = 'none';
         errEl.textContent = err.message;
         errEl.style.display = 'block';
       } finally {
