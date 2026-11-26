@@ -278,15 +278,18 @@ def get_captcha():
     try:
         r = sess.get(LOGIN_URL, timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
-        csrf_el = soup.find("input", {"name": "_csrf"})
+        login_form = soup.find("form", {"id": "login-form"}) or soup
+        csrf_el = login_form.find("input", {"name": "_csrf"})
         csrf_token = csrf_el["value"] if csrf_el else ""
+        form_action = login_form.get("action") if login_form.name == "form" else None
+        login_post_url = urljoin(LOGIN_URL, form_action or "/index.php?r=site%2Flogin")
 
         img_el = soup.find("img", {"id": "loginFormCaptcha-image"})
         if not img_el or not img_el.get("src"):
             return jsonify({"error": "Could not locate KL ERP CAPTCHA image."}), 502
 
         captcha_url = urljoin(LOGIN_URL, img_el["src"])
-        cap_resp = sess.get(captcha_url, timeout=20)
+        cap_resp = sess.get(captcha_url, timeout=20, headers={"Referer": LOGIN_URL})
         b64 = base64.b64encode(cap_resp.content).decode("ascii")
         mime = cap_resp.headers.get("Content-Type", "image/png")
 
@@ -294,6 +297,7 @@ def get_captcha():
         SESSIONS[sid] = {
             "session": sess,
             "csrf": csrf_token,
+            "login_post_url": login_post_url,
             "created_at": time.time(),
         }
         return jsonify({"session_id": sid, "captcha_url": f"data:{mime};base64,{b64}"})
@@ -326,14 +330,21 @@ def fetch_internals():
             "LoginForm[password]": password,
             "LoginForm[captcha]": captcha,
             "LoginForm[qr_code]": "",
+            "login-button": "",
         }
-        login_resp = sess.post(LOGIN_URL, data=login_payload, timeout=20, allow_redirects=True)
+        login_resp = sess.post(
+            entry["login_post_url"],
+            data=login_payload,
+            headers={"Referer": LOGIN_URL, "Origin": BASE_URL},
+            timeout=20,
+            allow_redirects=True,
+        )
         login_soup = BeautifulSoup(login_resp.text, "html.parser")
 
         if login_soup.find("input", {"name": "LoginForm[username]"}):
-            err_el = login_soup.select_one(".help-block-error, .alert-danger")
-            err_msg = err_el.get_text(" ", strip=True) if err_el else "Invalid ID, password, or CAPTCHA."
-            return jsonify({"error": err_msg or "Login failed. Check credentials and CAPTCHA."}), 401
+            errs = [el.get_text(" ", strip=True) for el in login_soup.select(".help-block-error, .alert-danger") if el.get_text(strip=True)]
+            err_msg = " | ".join(errs) if errs else "Invalid ID, password, or CAPTCHA."
+            return jsonify({"error": err_msg}), 401
 
         handouts_map = fetch_handouts_map(sess, academic_year, semester)
         courses = fetch_internals_data(sess, academic_year, semester, handouts_map)
