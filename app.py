@@ -1,9 +1,11 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 from urllib.parse import urljoin
 
 import requests
+from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -222,16 +224,16 @@ def extract_ajax_html(resp):
     return BeautifulSoup(text, "html.parser")
 
 
-def fetch_handouts_map(session, academic_year, semester):
-    soup = submit_year_sem_form(session, HANDOUTS_URL, academic_year, semester)
+def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None):
+    soup = preloaded_soup if preloaded_soup is not None else submit_year_sem_form(session, HANDOUTS_URL, academic_year, semester)
     handouts = {}
+    targets = []
 
     for tr in soup.find_all("tr"):
         cells = tr.find_all("td")
         if len(cells) < 4:
             continue
         texts = [c.get_text(strip=True) for c in cells]
-        # Find course code pattern like 24EC3112, 24EDS3101A, etc.
         code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{2,5}[0-9]{2,4}[A-Z0-9]*$", t)), None)
         if not code:
             continue
@@ -248,23 +250,30 @@ def fetch_handouts_map(session, academic_year, semester):
                     break
         if not raw_href or raw_href == "#":
             continue
-        handout_url = urljoin(HANDOUTS_URL, raw_href)
+        targets.append((code, urljoin(HANDOUTS_URL, raw_href)))
+
+    def _fetch_one(item):
+        code, h_url = item
         h_resp = session.get(
-            handout_url,
+            h_url,
             headers={"X-Requested-With": "XMLHttpRequest", "Referer": HANDOUTS_URL},
             timeout=20,
         )
-        h_soup = extract_ajax_html(h_resp)
-        plan = parse_evaluation_plan(h_soup)
-        if plan:
-            handouts[code] = plan
+        return code, parse_evaluation_plan(extract_ajax_html(h_resp))
+
+    if targets:
+        with ThreadPoolExecutor(max_workers=min(10, len(targets))) as pool:
+            for code, plan in pool.map(_fetch_one, targets):
+                if plan:
+                    handouts[code] = plan
 
     return handouts
 
 
-def fetch_internals_data(session, academic_year, semester, handouts_map):
-    soup = submit_year_sem_form(session, INTERNALS_URL, academic_year, semester)
+def fetch_internals_data(session, academic_year, semester, handouts_map, preloaded_soup=None):
+    soup = preloaded_soup if preloaded_soup is not None else submit_year_sem_form(session, INTERNALS_URL, academic_year, semester)
     courses = []
+    fetch_jobs = []  # (course_idx, comp_idx, url)
 
     for tr in soup.find_all("tr"):
         cells = tr.find_all("td")
@@ -272,42 +281,28 @@ def fetch_internals_data(session, academic_year, semester, handouts_map):
             continue
         texts = [c.get_text(strip=True) for c in cells]
         code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{2,5}[0-9]{2,4}[A-Z0-9]*$", t)), None)
-        if not code:
-            continue
-        # Skip courses without a handout (e.g., non-credited courses)
-        if code not in handouts_map:
+        if not code or code not in handouts_map:
             continue
 
         code_idx = texts.index(code)
         course_name = texts[code_idx + 1] if code_idx + 1 < len(texts) else code
 
-        # Extract component links from the last cell
         comp_links = {}
         for a in tr.find_all("a", href=True):
             comp_label = a.get_text(strip=True)
             comp_url = urljoin(INTERNALS_URL, a["href"])
             comp_links[comp_label.lower()] = comp_url
 
+        course_idx = len(courses)
         course_components = []
-        for plan_item in handouts_map[code]:
+        for comp_idx, plan_item in enumerate(handouts_map[code]):
             cname = plan_item["name"]
             matched_url = comp_links.get(cname.lower())
             if not matched_url:
-                # Fuzzy fallback match
                 for k, u in comp_links.items():
                     if cname.lower() in k or k in cname.lower():
                         matched_url = u
                         break
-
-            raw_val = None
-            if matched_url:
-                c_resp = session.get(
-                    matched_url,
-                    headers={"X-Requested-With": "XMLHttpRequest", "Referer": INTERNALS_URL},
-                    timeout=20,
-                )
-                c_soup = extract_ajax_html(c_resp)
-                raw_val = parse_component_marks(c_soup)
 
             course_components.append(
                 {
@@ -315,18 +310,30 @@ def fetch_internals_data(session, academic_year, semester, handouts_map):
                     "type": plan_item["type"],
                     "maxMarks": plan_item["maxMarks"],
                     "weight": plan_item["weight"],
-                    "raw": raw_val,
-                    "status": "uploaded" if raw_val is not None else "not_uploaded",
+                    "raw": None,
+                    "status": "not_uploaded",
                 }
             )
+            if matched_url:
+                fetch_jobs.append((course_idx, comp_idx, matched_url))
 
-        courses.append(
-            {
-                "code": code,
-                "name": course_name,
-                "components": course_components,
-            }
+        courses.append({"code": code, "name": course_name, "components": course_components})
+
+    def _fetch_comp(job):
+        ci, ri, url = job
+        c_resp = session.get(
+            url,
+            headers={"X-Requested-With": "XMLHttpRequest", "Referer": INTERNALS_URL},
+            timeout=20,
         )
+        return ci, ri, parse_component_marks(extract_ajax_html(c_resp))
+
+    if fetch_jobs:
+        with ThreadPoolExecutor(max_workers=min(12, len(fetch_jobs))) as pool:
+            for ci, ri, raw_val in pool.map(_fetch_comp, fetch_jobs):
+                if raw_val is not None:
+                    courses[ci]["components"][ri]["raw"] = raw_val
+                    courses[ci]["components"][ri]["status"] = "uploaded"
 
     return courses
 
@@ -344,6 +351,9 @@ def how_it_works():
 @app.route("/api/captcha", methods=["GET"])
 def get_captcha():
     sess = requests.Session()
+    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+    sess.mount("https://", adapter)
+    sess.mount("http://", adapter)
     sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
     try:
@@ -395,6 +405,9 @@ def fetch_internals():
         return jsonify({"error": "Student ID, password, and CAPTCHA are required."}), 400
 
     sess = requests.Session()
+    adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+    sess.mount("https://", adapter)
+    sess.mount("http://", adapter)
     sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
     for ck, cv in entry.get("cookies", {}).items():
         sess.cookies.set(ck, cv, domain="newerp.kluniversity.in", path="/")
@@ -426,8 +439,14 @@ def fetch_internals():
                 err_msg = f"Login returned {login_resp.status_code} ({login_resp.url}) | post={entry['login_post_url']} | hist={hist} | cookies={list(sess.cookies.get_dict().keys())}"
             return jsonify({"error": err_msg}), 401
 
-        handouts_map = fetch_handouts_map(sess, academic_year, semester)
-        courses = fetch_internals_data(sess, academic_year, semester, handouts_map)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_h = pool.submit(submit_year_sem_form, sess, HANDOUTS_URL, academic_year, semester)
+            f_i = pool.submit(submit_year_sem_form, sess, INTERNALS_URL, academic_year, semester)
+            h_soup = f_h.result()
+            i_soup = f_i.result()
+
+        handouts_map = fetch_handouts_map(sess, academic_year, semester, preloaded_soup=h_soup)
+        courses = fetch_internals_data(sess, academic_year, semester, handouts_map, preloaded_soup=i_soup)
 
         debug_info = None
         if not courses:
