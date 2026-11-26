@@ -47,7 +47,8 @@ def find_option_value(select_el, target_text):
 def submit_year_sem_form(session, url, academic_year, semester):
     resp = session.get(url, timeout=20)
     soup = BeautifulSoup(resp.text, "html.parser")
-    form = soup.find("form")
+    # Pick the form that actually has <select> dropdowns (skipping header/theme forms)
+    form = next((f for f in soup.find_all("form") if f.find("select")), None)
     if not form:
         return soup
 
@@ -57,9 +58,14 @@ def submit_year_sem_form(session, url, academic_year, semester):
         if not name:
             continue
         itype = (inp.get("type") or "").lower()
-        if itype in ("submit", "button", "reset"):
+        if itype in ("button", "reset"):
             continue
         payload[name] = inp.get("value", "")
+
+    for btn in form.find_all("button"):
+        bname = btn.get("name")
+        if bname and (btn.get("type") or "submit").lower() == "submit":
+            payload[bname] = btn.get("value", "")
 
     for sel in form.find_all("select"):
         name = sel.get("name")
@@ -186,10 +192,13 @@ def fetch_handouts_map(session, academic_year, semester):
         code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{2,5}[0-9]{2,4}[A-Z0-9]*$", t)), None)
         if not code:
             continue
-        link = tr.find("a", href=True)
+        link = tr.find("a", href=True) or tr.find(attrs={"data-url": True})
         if not link:
             continue
-        handout_url = urljoin(HANDOUTS_URL, link["href"])
+        raw_href = link.get("href") or link.get("data-url") or ""
+        if not raw_href or raw_href == "#":
+            continue
+        handout_url = urljoin(HANDOUTS_URL, raw_href)
         h_resp = session.get(handout_url, timeout=20)
         h_soup = BeautifulSoup(h_resp.text, "html.parser")
         plan = parse_evaluation_plan(h_soup)
