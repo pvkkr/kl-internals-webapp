@@ -132,10 +132,15 @@ def parse_evaluation_plan(handout_soup):
         grid = expand_table_rows(table)
         if len(grid) < 2:
             continue
-        headers = [h.lower() for h in grid[0]]
-        if not any("evaluation component" in h for h in headers):
+
+        header_idx = next(
+            (idx for idx, row in enumerate(grid) if any("evaluation component" in c.lower() for c in row)),
+            None,
+        )
+        if header_idx is None:
             continue
 
+        headers = [h.lower() for h in grid[header_idx]]
         idx_type = next((i for i, h in enumerate(headers) if "evaluation type" in h), None)
         idx_comp = next((i for i, h in enumerate(headers) if "evaluation component" in h), None)
         idx_metric = next((i for i, h in enumerate(headers) if "metric" in h), None)
@@ -143,11 +148,12 @@ def parse_evaluation_plan(handout_soup):
         if idx_comp is None or idx_metric is None or idx_val is None:
             continue
 
-        for cells in grid[1:]:
+        for cells in grid[header_idx + 1 :]:
             if len(cells) <= max(idx_comp, idx_metric, idx_val):
                 continue
             eval_type = cells[idx_type] if idx_type is not None and idx_type < len(cells) else ""
-            if "in semester" not in eval_type.lower():
+            eval_norm = re.sub(r"[-\s]+", " ", eval_type.lower())
+            if "in semester" not in eval_norm:
                 continue
 
             comp_name = cells[idx_comp]
@@ -161,7 +167,7 @@ def parse_evaluation_plan(handout_soup):
                 comp_name,
                 {
                     "name": comp_name,
-                    "type": "Formative" if "formative" in eval_type.lower() else "Summative",
+                    "type": "Formative" if "formative" in eval_norm else "Summative",
                     "maxMarks": None,
                     "weight": None,
                 },
@@ -238,7 +244,11 @@ def fetch_handouts_map(session, academic_year, semester):
         if not raw_href or raw_href == "#":
             continue
         handout_url = urljoin(HANDOUTS_URL, raw_href)
-        h_resp = session.get(handout_url, timeout=20)
+        h_resp = session.get(
+            handout_url,
+            headers={"X-Requested-With": "XMLHttpRequest", "Referer": HANDOUTS_URL},
+            timeout=20,
+        )
         h_soup = BeautifulSoup(h_resp.text, "html.parser")
         plan = parse_evaluation_plan(h_soup)
         if plan:
