@@ -20,6 +20,55 @@ class TestKLInternalsParsers(unittest.TestCase):
         soup2 = webapp.extract_ajax_html(mock_raw)
         self.assertIsNotNone(soup2.find("table"))
 
+    def test_parse_evaluation_plan_real_kl_erp_markup(self):
+        html = """
+        <table class="table table-bordered" border="1" cellpadding="1" width="100%;">
+          <thead class="table-info">
+            <tr>
+              <th><b>Evaluation Type</b></th>
+              <th><b>Evaluation Component</b></th>
+              <th colspan="3"><b>Weightage/Marks</b></th>
+              <th colspan="2"><b>Assessment Dates</b></th>
+              <th colspan="2"> <b>Duration (Minutes)</b></th>
+              <th colspan="2">CO1</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td rowspan="2"><p><b>End Semester Summative EvaluationTotal= 40 %</b></p></td>
+              <td rowspan="2"><b>Lab End Semester Exam</b></td>
+              <td><p>Weightage</p></td>
+              <td colspan="2 "><p>16</p></td>
+              <td rowspan="2  " colspan="2"><p></p></td>
+              <td rowspan="2  " colspan="2"><p>180</p></td>
+              <td colspan="2"><p></p></td>
+            </tr>
+            <tr>
+              <td><p>Max Marks</p></td>
+              <td colspan="2 "><p>50</p></td>
+              <td colspan="2"><p></p></td>
+            </tr>
+            <tr>
+              <td rowspan="2"><p><b>In Semester Formative Evaluation Total= 24 %</b></p></td>
+              <td rowspan="2"><b>ALM</b></td>
+              <td><p>Weightage</p></td>
+              <td colspan="2 "><p>8</p></td>
+              <td rowspan="2  " colspan="2"><p></p></td>
+              <td rowspan="2  " colspan="2"><p>100</p></td>
+              <td colspan="2"><p>2</p></td>
+            </tr>
+            <tr>
+              <td><p>Max Marks</p></td>
+              <td colspan="2 "><p>100</p></td>
+              <td colspan="2"><p>25</p></td>
+            </tr>
+          </tbody>
+        </table>
+        """
+        plan = webapp.parse_evaluation_plan(BeautifulSoup(html, "html.parser"))
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(plan[0], {"name": "ALM", "type": "Formative", "maxMarks": 100.0, "weight": 8.0})
+
     def test_parse_evaluation_plan_with_title_row_and_rowspan(self):
         html = """
         <table>

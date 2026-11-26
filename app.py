@@ -111,8 +111,8 @@ def expand_table_rows(table):
                 row_cells.append(spans.pop((r_idx, c_idx)))
                 c_idx += 1
             text = cell.get_text(" ", strip=True)
-            rowspan = int(cell.get("rowspan") or 1)
-            colspan = int(cell.get("colspan") or 1)
+            rowspan = int(str(cell.get("rowspan") or 1).strip() or 1)
+            colspan = int(str(cell.get("colspan") or 1).strip() or 1)
             for dc in range(colspan):
                 row_cells.append(text)
                 for dr in range(1, rowspan):
@@ -143,8 +143,9 @@ def parse_evaluation_plan(handout_soup):
         headers = [h.lower() for h in grid[header_idx]]
         idx_type = next((i for i, h in enumerate(headers) if "evaluation type" in h), None)
         idx_comp = next((i for i, h in enumerate(headers) if "evaluation component" in h), None)
-        idx_metric = next((i for i, h in enumerate(headers) if "metric" in h), None)
-        idx_val = next((i for i, h in enumerate(headers) if h == "value"), None)
+        idx_wm = next((i for i, h in enumerate(headers) if "weightage/marks" in h), None)
+        idx_metric = idx_wm if idx_wm is not None else next((i for i, h in enumerate(headers) if "metric" in h), None)
+        idx_val = (idx_wm + 1) if idx_wm is not None else next((i for i, h in enumerate(headers) if h == "value"), None)
         if idx_comp is None or idx_metric is None or idx_val is None:
             continue
 
