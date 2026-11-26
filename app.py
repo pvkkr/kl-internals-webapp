@@ -391,7 +391,8 @@ def fetch_internals():
 
     sess = requests.Session()
     sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-    sess.cookies.update(entry.get("cookies", {}))
+    for ck, cv in entry.get("cookies", {}).items():
+        sess.cookies.set(ck, cv, domain="newerp.kluniversity.in", path="/")
 
     try:
         login_payload = {
@@ -416,7 +417,8 @@ def fetch_internals():
             if errs:
                 err_msg = " | ".join(dict.fromkeys(errs))
             else:
-                err_msg = f"Login returned {login_resp.status_code} ({login_resp.url}) — please refresh CAPTCHA and check credentials."
+                hist = [f"{h.status_code}->{h.headers.get('Location','')}" for h in login_resp.history]
+                err_msg = f"Login returned {login_resp.status_code} ({login_resp.url}) | post={entry['login_post_url']} | hist={hist} | cookies={list(sess.cookies.get_dict().keys())}"
             return jsonify({"error": err_msg}), 401
 
         handouts_map = fetch_handouts_map(sess, academic_year, semester)
