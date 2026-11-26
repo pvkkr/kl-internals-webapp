@@ -30,17 +30,24 @@ def cleanup_sessions():
 
 def find_option_value(select_el, target_text):
     target_norm = re.sub(r"\s+", " ", target_text.strip().lower())
-    for opt in select_el.find_all("option"):
-        txt = re.sub(r"\s+", " ", opt.get_text(strip=True).lower())
-        val = opt.get("value", "")
+    options = [(re.sub(r"\s+", " ", opt.get_text(strip=True).lower()), opt.get("value", "")) for opt in select_el.find_all("option")]
+
+    for txt, val in options:
         if txt == target_norm or target_norm in txt:
             return val
+
     # Fallback for 2026-2027 vs 2026-27
     compact = target_norm.replace("-20", "-")
-    for opt in select_el.find_all("option"):
-        txt = re.sub(r"\s+", " ", opt.get_text(strip=True).lower()).replace("-20", "-")
-        if compact in txt:
-            return opt.get("value", "")
+    for txt, val in options:
+        if compact in txt.replace("-20", "-"):
+            return val
+
+    # Fallback for "Odd Sem" vs "Odd" / "Even Sem" vs "Even"
+    first_word = target_norm.split(" ")[0]
+    if first_word:
+        for txt, val in options:
+            if txt == first_word or first_word in txt:
+                return val
     return None
 
 
@@ -358,12 +365,27 @@ def fetch_internals():
         handouts_map = fetch_handouts_map(sess, academic_year, semester)
         courses = fetch_internals_data(sess, academic_year, semester, handouts_map)
 
+        debug_info = None
+        if not courses:
+            h_soup = submit_year_sem_form(sess, HANDOUTS_URL, academic_year, semester)
+            i_soup = submit_year_sem_form(sess, INTERNALS_URL, academic_year, semester)
+            debug_info = {
+                "handout_courses_parsed": list(handouts_map.keys()),
+                "handout_rows": len(h_soup.find_all("tr")),
+                "internal_rows": len(i_soup.find_all("tr")),
+                "handout_selects": [
+                    {s.get("name"): [o.get_text(strip=True) for o in s.find_all("option")[:6]]}
+                    for s in h_soup.find_all("select")
+                ],
+            }
+
         return jsonify(
             {
                 "student_id": username,
                 "academic_year": academic_year,
                 "semester": semester,
                 "courses": courses,
+                "debug": debug_info,
             }
         )
     except requests.RequestException as exc:

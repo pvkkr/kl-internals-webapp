@@ -156,7 +156,7 @@
     <header>
       <h1>KL ERP Live Internals Calculator</h1>
       <div class="subtitle">
-        Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v4</span>
+        Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v5</span>
       </div>
     </header>
 
@@ -255,7 +255,8 @@
         loadedCourses = data.courses || [];
         document.getElementById('resultsHeader').style.display = 'block';
         document.getElementById('resultsHeader').textContent =
-          `Showing ${loadedCourses.length} credited courses for ${data.student_id} (${data.academic_year} · ${data.semester})`;
+          `Showing ${loadedCourses.length} credited courses for ${data.student_id} (${data.academic_year} · ${data.semester})` +
+          (data.debug ? ` — Debug: ${JSON.stringify(data.debug)}` : '');
         renderCourses();
         await loadCaptcha();
       } catch (err) {
