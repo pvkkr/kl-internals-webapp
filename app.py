@@ -24,9 +24,31 @@ SERIALIZER = URLSafeTimedSerializer(os.environ.get("SECRET_KEY", "kl-internals-s
 SESSION_TTL_SECONDS = 1800
 STATS_FILE = os.path.join(os.path.dirname(__file__), "visit_stats.json")
 STATS_LOCK = threading.Lock()
+UPSTASH_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+UPSTASH_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
+BASE_VISITS = int(os.environ.get("BASE_VISITS", "0"))
+BASE_CALCS = int(os.environ.get("BASE_CALCS", "0"))
+
+
+def _upstash_cmd(cmd_parts):
+    r = requests.post(
+        UPSTASH_URL,
+        headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"},
+        json=cmd_parts,
+        timeout=3,
+    )
+    return r.json().get("result")
 
 
 def update_stats(inc_visits=0, inc_calcs=0):
+    if UPSTASH_URL and UPSTASH_TOKEN:
+        try:
+            v = int(_upstash_cmd(["INCRBY", "kl_visits", inc_visits]) if inc_visits else (_upstash_cmd(["GET", "kl_visits"]) or 0))
+            c = int(_upstash_cmd(["INCRBY", "kl_calcs", inc_calcs]) if inc_calcs else (_upstash_cmd(["GET", "kl_calcs"]) or 0))
+            return {"visits": BASE_VISITS + v, "calculations": BASE_CALCS + c}
+        except Exception:
+            pass
+
     with STATS_LOCK:
         stats = {"visits": 0, "calculations": 0}
         try:
@@ -44,7 +66,7 @@ def update_stats(inc_visits=0, inc_calcs=0):
                 json.dump(stats, f)
         except Exception:
             pass
-        return stats
+        return {"visits": BASE_VISITS + stats["visits"], "calculations": BASE_CALCS + stats["calculations"]}
 
 
 def find_option_value(select_el, target_text):
