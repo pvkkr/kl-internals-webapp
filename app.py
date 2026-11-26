@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
+import threading
 import time
 from urllib.parse import urljoin
 
@@ -21,6 +22,29 @@ INTERNALS_URL = f"{BASE_URL}/index.php?r=studentinfo%2Fstudentendexamresult%2Fge
 
 SERIALIZER = URLSafeTimedSerializer(os.environ.get("SECRET_KEY", "kl-internals-stateless-session-v10"))
 SESSION_TTL_SECONDS = 1800
+STATS_FILE = os.path.join(os.path.dirname(__file__), "visit_stats.json")
+STATS_LOCK = threading.Lock()
+
+
+def update_stats(inc_visits=0, inc_calcs=0):
+    with STATS_LOCK:
+        stats = {"visits": 0, "calculations": 0}
+        try:
+            if os.path.exists(STATS_FILE):
+                with open(STATS_FILE, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    stats["visits"] = int(loaded.get("visits", 0))
+                    stats["calculations"] = int(loaded.get("calculations", 0))
+        except Exception:
+            pass
+        stats["visits"] += inc_visits
+        stats["calculations"] += inc_calcs
+        try:
+            with open(STATS_FILE, "w", encoding="utf-8") as f:
+                json.dump(stats, f)
+        except Exception:
+            pass
+        return stats
 
 
 def find_option_value(select_el, target_text):
@@ -342,7 +366,13 @@ def fetch_internals_data(session, academic_year, semester, handouts_map, preload
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    stats = update_stats(inc_visits=1)
+    return render_template("index.html", visits=stats["visits"], calculations=stats["calculations"])
+
+
+@app.route("/api/stats", methods=["GET"])
+def get_stats():
+    return jsonify(update_stats())
 
 
 @app.route("/how-it-works")
@@ -558,11 +588,13 @@ def fetch_internals_stream():
             courses = fetch_internals_data(sess, academic_year, semester, handouts_map, preloaded_soup=i_soup)
 
             yield _event("log", {"msg": f"[{ts()}] Done! {len(courses)} credited courses calculated. Session wiped from RAM."})
+            stats = update_stats(inc_calcs=1)
             yield _event("done", {
                 "student_id": username,
                 "academic_year": academic_year,
                 "semester": semester,
                 "courses": courses,
+                "stats": stats,
             })
         except requests.RequestException as exc:
             yield _event("error", {"error": f"Error communicating with KL ERP: {exc}"})

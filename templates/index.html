@@ -414,10 +414,16 @@
       <div>
         <h1>KL ERP Live Internals Calculator</h1>
         <div class="subtitle">
-          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v19</span>
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v20</span>
         </div>
       </div>
-      <button id="themeToggle" type="button" onclick="toggleTheme()" style="white-space:nowrap;">Light Mode</button>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span id="visitBadge" style="display:inline-flex; align-items:center; gap:7px; padding: 8px 13px; border-radius: 999px; background: var(--surface); border: 1px solid rgba(52, 211, 153, 0.35); font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums; box-shadow: 0 4px 14px rgba(0,0,0,0.18);">
+          <span style="width:8px; height:8px; border-radius:50%; background: var(--good); box-shadow: 0 0 8px var(--good);"></span>
+          <span id="visitText">Visits: {{ visits | default(1) }} · Calculated: {{ calculations | default(0) }}</span>
+        </span>
+        <button id="themeToggle" type="button" onclick="toggleTheme()" style="white-space:nowrap;">Light Mode</button>
+      </div>
     </header>
 
     <div class="quick-links">
@@ -625,6 +631,10 @@
         }
 
         if (!finalData) throw new Error('Stream ended unexpectedly.');
+        if (finalData.stats) {
+          document.getElementById('visitText').textContent =
+            `Visits: ${finalData.stats.visits} · Calculated: ${finalData.stats.calculations}`;
+        }
         const totalSecs = ((performance.now() - fetchStart) / 1000).toFixed(1);
         timerBar.textContent = `Fetched ${finalData.courses.length} courses in ${totalSecs}s`;
         loadedCourses = finalData.courses || [];
