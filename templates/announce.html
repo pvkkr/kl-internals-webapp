@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Announcement Video — KL ERP Live Internals Calculator</title>
+  <style>
+    :root {
+      --bg: #070b16;
+      --surface: #121931;
+      --border: rgba(148, 163, 184, 0.2);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(circle at top, #172554 0%, var(--bg) 60%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+    }
+    h1 { margin: 0 0 6px; font-size: 1.4rem; text-align: center; }
+    .sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 18px; text-align: center; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+    .btn {
+      background: #192344;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn.primary { background: linear-gradient(135deg, #0284c7, #4f46e5); border-color: transparent; }
+    .btn.good { background: linear-gradient(135deg, #059669, #0284c7); border-color: transparent; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    canvas {
+      width: min(360px, 92vw);
+      height: auto;
+      aspect-ratio: 9 / 16;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      background: #070b16;
+    }
+    .status { margin-top: 12px; color: var(--muted); font-size: 0.84rem; }
+  </style>
+</head>
+<body>
+  <h1>Announcement Video Generator (9:16 Reels / Status)</h1>
+  <div class="sub">Preview the kinetic announcement animation or download it as a video file.</div>
+
+  <div class="controls">
+    <button class="btn primary" onclick="playAnimation()">Replay</button>
+    <button id="recBtn" class="btn good" onclick="recordAndDownload()">Download Video (.webm)</button>
+    <a class="btn" href="/how-it-works">How It Works</a>
+    <a class="btn" href="/">Back to Calculator</a>
+  </div>
+
+  <canvas id="stage" width="720" height="1280"></canvas>
+  <div class="status" id="statusText">Playing preview...</div>
+
+  <script>
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const SCENES = [
+      {
+        dur: 2800,
+        badge: 'KL UNIVERSITY STUDENTS',
+        title: ['Tired of calculating', 'KL ERP internals', 'by hand?'],
+        sub: 'Weightages, -1/-2 values, handouts...',
+        color: '#38bdf8'
+      },
+      {
+        dur: 3000,
+        badge: 'NEW LAUNCH',
+        title: ['KL ERP Live', 'Internals Calculator'],
+        sub: 'One click. Full semester breakdown.',
+        color: '#818cf8'
+      },
+      {
+        dur: 3200,
+        badge: 'SMART & ACCURATE',
+        title: ['Reads Handout', 'Evaluation Plans', 'Automatically'],
+        sub: 'Ignores -1 / -2 · Marks Not Uploaded',
+        color: '#34d399'
+      },
+      {
+        dur: 3200,
+        badge: '100% SAFE & OPEN SOURCE',
+        title: ['Zero Data Stored.', 'Zero Database.'],
+        sub: 'Credentials used once in RAM, then wiped.',
+        color: '#34d399'
+      },
+      {
+        dur: 3400,
+        badge: 'TRY IT NOW',
+        title: ['kl-internals-webapp', '.onrender.com'],
+        sub: 'Open-source on GitHub: pvkkr/kl-internals-webapp',
+        color: '#38bdf8'
+      }
+    ];
+
+    const TOTAL_DUR = SCENES.reduce((a, b) => a + b.dur, 0);
+    let startTime = performance.now();
+    let animId = null;
+
+    function easeOutCubic(t) {
+      return 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+    }
+
+    function drawFrame(now) {
+      const elapsed = (now - startTime) % TOTAL_DUR;
+      let acc = 0;
+      let sceneIdx = 0;
+      let sceneTime = 0;
+      for (let i = 0; i < SCENES.length; i++) {
+        if (elapsed < acc + SCENES[i].dur) {
+          sceneIdx = i;
+          sceneTime = elapsed - acc;
+          break;
+        }
+        acc += SCENES[i].dur;
+      }
+
+      const s = SCENES[sceneIdx];
+      const p = sceneTime / s.dur;
+      const enter = easeOutCubic(Math.min(1, sceneTime / 550));
+      const exit = p > 0.85 ? 1 - (p - 0.85) / 0.15 : 1;
+      const alpha = enter * exit;
+
+      // Background
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, '#070b16');
+      grad.addColorStop(0.5, '#0f172a');
+      grad.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Ambient glowing orb
+      const orbY = 360 + Math.sin(now * 0.0015) * 40;
+      const rad = ctx.createRadialGradient(W / 2, orbY, 20, W / 2, orbY, 340);
+      rad.addColorStop(0, s.color + '44');
+      rad.addColorStop(1, 'transparent');
+      ctx.fillStyle = rad;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const yOffset = (1 - enter) * 45;
+
+      // Badge pill
+      ctx.font = '700 22px Inter, system-ui, sans-serif';
+      const bw = ctx.measureText(s.badge).width + 44;
+      const bx = (W - bw) / 2;
+      const by = 410 + yOffset;
+      ctx.fillStyle = s.color + '26';
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, 46, 23);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = s.color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s.badge, W / 2, by + 23);
+
+      // Main headline lines
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '800 58px Inter, system-ui, sans-serif';
+      let ty = 540 + yOffset;
+      for (const line of s.title) {
+        ctx.fillText(line, W / 2, ty);
+        ty += 74;
+      }
+
+      // Subtitle
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '500 28px Inter, system-ui, sans-serif';
+      ctx.fillText(s.sub, W / 2, ty + 38);
+
+      // Progress dots at bottom
+      const dotGap = 24;
+      const startDotX = W / 2 - ((SCENES.length - 1) * dotGap) / 2;
+      for (let i = 0; i < SCENES.length; i++) {
+        ctx.beginPath();
+        ctx.arc(startDotX + i * dotGap, H - 110, i === sceneIdx ? 7 : 5, 0, Math.PI * 2);
+        ctx.fillStyle = i === sceneIdx ? s.color : 'rgba(148,163,184,0.35)';
+        ctx.fill();
+      }
+
+      ctx.restore();
+      animId = requestAnimationFrame(drawFrame);
+    }
+
+    function playAnimation() {
+      startTime = performance.now();
+      if (!animId) animId = requestAnimationFrame(drawFrame);
+    }
+
+    function recordAndDownload() {
+      const btn = document.getElementById('recBtn');
+      const status = document.getElementById('statusText');
+      if (!canvas.captureStream || typeof MediaRecorder === 'undefined') {
+        status.textContent = 'Recording is not supported in this browser—use Chrome/Edge or screen-record the preview.';
+        return;
+      }
+
+      btn.disabled = true;
+      status.textContent = 'Recording 15-second announcement video...';
+      startTime = performance.now();
+
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'kl-erp-internals-announcement.webm';
+        a.click();
+        URL.revokeObjectURL(url);
+        btn.disabled = false;
+        status.textContent = 'Downloaded kl-erp-internals-announcement.webm!';
+      };
+
+      recorder.start();
+      setTimeout(() => recorder.stop(), TOTAL_DUR);
+    }
+
+    playAnimation();
+  </script>
+</body>
+</html>

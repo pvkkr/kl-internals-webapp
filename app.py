@@ -348,6 +348,11 @@ def how_it_works():
     return render_template("how_it_works.html")
 
 
+@app.route("/announce")
+def announce():
+    return render_template("announce.html")
+
+
 @app.route("/api/captcha", methods=["GET"])
 def get_captcha():
     sess = requests.Session()
