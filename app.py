@@ -1,13 +1,12 @@
 import base64
 import os
 import re
-import time
-import uuid
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 app = Flask(__name__)
 
@@ -16,16 +15,8 @@ LOGIN_URL = f"{BASE_URL}/index.php"
 HANDOUTS_URL = f"{BASE_URL}/index.php?r=studentinfo%2Fstudentcoursemappingmasterinfoview%2Fgetstudentcourseshandouts"
 INTERNALS_URL = f"{BASE_URL}/index.php?r=studentinfo%2Fstudentendexamresult%2Fgetstudentinternalmarks"
 
-# In-memory short-lived login sessions (never persisted to disk)
-SESSIONS = {}
-SESSION_TTL_SECONDS = 900
-
-
-def cleanup_sessions():
-    now = time.time()
-    expired = [k for k, v in SESSIONS.items() if now - v["created_at"] > SESSION_TTL_SECONDS]
-    for k in expired:
-        SESSIONS.pop(k, None)
+SERIALIZER = URLSafeTimedSerializer(os.environ.get("SECRET_KEY", "kl-internals-stateless-session-v10"))
+SESSION_TTL_SECONDS = 1800
 
 
 def find_option_value(select_el, target_text):
@@ -347,7 +338,6 @@ def index():
 
 @app.route("/api/captcha", methods=["GET"])
 def get_captcha():
-    cleanup_sessions()
     sess = requests.Session()
     sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
 
@@ -369,13 +359,11 @@ def get_captcha():
         b64 = base64.b64encode(cap_resp.content).decode("ascii")
         mime = cap_resp.headers.get("Content-Type", "image/png")
 
-        sid = str(uuid.uuid4())
-        SESSIONS[sid] = {
-            "session": sess,
+        sid = SERIALIZER.dumps({
+            "cookies": sess.cookies.get_dict(),
             "csrf": csrf_token,
             "login_post_url": login_post_url,
-            "created_at": time.time(),
-        }
+        })
         return jsonify({"session_id": sid, "captcha_url": f"data:{mime};base64,{b64}"})
     except requests.RequestException as exc:
         return jsonify({"error": f"Failed to reach KL ERP: {exc}"}), 502
@@ -391,13 +379,19 @@ def fetch_internals():
     academic_year = (data.get("academic_year") or "2026-2027").strip()
     semester = (data.get("semester") or "Odd Sem").strip()
 
-    if not sid or sid not in SESSIONS:
-        return jsonify({"error": "Session expired. Please refresh the CAPTCHA and try again."}), 400
+    if not sid:
+        return jsonify({"error": "Missing session token. Please refresh the CAPTCHA and try again."}), 400
+    try:
+        entry = SERIALIZER.loads(sid, max_age=SESSION_TTL_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return jsonify({"error": "CAPTCHA expired. Please refresh the CAPTCHA and try again."}), 400
+
     if not username or not password or not captcha:
         return jsonify({"error": "Student ID, password, and CAPTCHA are required."}), 400
 
-    entry = SESSIONS.pop(sid)
-    sess = entry["session"]
+    sess = requests.Session()
+    sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+    sess.cookies.update(entry.get("cookies", {}))
 
     try:
         login_payload = {
