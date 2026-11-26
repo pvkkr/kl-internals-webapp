@@ -414,7 +414,7 @@
       <div>
         <h1>KL ERP Live Internals Calculator</h1>
         <div class="subtitle">
-          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v21</span>
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v22</span>
         </div>
       </div>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -448,7 +448,12 @@
           </div>
           <div>
             <label for="academicYear">Academic Year</label>
-            <input id="academicYear" type="text" value="2026-2027" required />
+            <select id="academicYear">
+              <option value="2023-2024">2023-24</option>
+              <option value="2024-2025">2024-25</option>
+              <option value="2025-2026">2025-26</option>
+              <option value="2026-2027" selected>2026-27</option>
+            </select>
           </div>
           <div>
             <label for="semester">Semester</label>
