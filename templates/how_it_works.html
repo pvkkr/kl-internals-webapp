@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How It Works — Zero Data Stored | KL ERP Internals Calculator</title>
+  <style>
+    :root {
+      --bg: #070b16;
+      --surface: rgba(18, 25, 49, 0.9);
+      --border: rgba(148, 163, 184, 0.2);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --purple: #a78bfa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(circle at top right, #172554 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 28px 18px 64px;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+    .top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.35rem, 3vw, 1.75rem);
+      background: linear-gradient(90deg, #f8fafc, #7dd3fc, #6ee7b7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .sub { color: var(--muted); font-size: 0.92rem; margin-top: 4px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #192344;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 9px 15px;
+      border-radius: 10px;
+      font-size: 0.86rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn:hover { border-color: var(--accent); }
+    .btn.primary { background: linear-gradient(135deg, #0284c7, #4f46e5); border-color: transparent; }
+
+    .stage {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 26px 22px;
+      margin-bottom: 22px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    .nodes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      align-items: stretch;
+      margin-bottom: 22px;
+    }
+    @media (max-width: 700px) {
+      .nodes { grid-template-columns: 1fr; }
+    }
+    .node {
+      background: rgba(7, 11, 22, 0.78);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      position: relative;
+      transition: border-color 0.35s, transform 0.35s, box-shadow 0.35s;
+    }
+    .node.active {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+      box-shadow: 0 0 26px rgba(56, 189, 248, 0.22);
+    }
+    .node.good-active {
+      border-color: var(--good);
+      transform: translateY(-4px);
+      box-shadow: 0 0 26px rgba(52, 211, 153, 0.22);
+    }
+    .node-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .node-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 6px; }
+    .node-desc { color: var(--muted); font-size: 0.85rem; line-height: 1.45; }
+
+    .packet-bar {
+      background: rgba(7, 11, 22, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 18px;
+    }
+    .packet-step {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--good);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .packet-text { font-size: 1rem; font-weight: 600; color: #f8fafc; }
+    .packet-detail { font-size: 0.86rem; color: var(--muted); margin-top: 4px; }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 700px) {
+      .timeline { grid-template-columns: repeat(2, 1fr); }
+    }
+    .step-pill {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(7, 11, 22, 0.6);
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+    .step-pill.active {
+      border-color: var(--accent);
+      color: #f8fafc;
+      background: rgba(56, 189, 248, 0.14);
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .proof-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+    .proof-card h3 { margin: 0 0 6px; font-size: 0.96rem; color: #6ee7b7; }
+    .proof-card p { margin: 0; font-size: 0.85rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-bar">
+      <div>
+        <h1>How It Works (Zero Data Stored)</h1>
+        <div class="sub">Live animated architecture of KL ERP Internals Calculator</div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn primary" onclick="restartAnimation()">Replay Animation</button>
+        <a class="btn" href="https://github.com/pvkkr/kl-internals-webapp/blob/main/app.py" target="_blank" rel="noopener">View Source (app.py)</a>
+        <a class="btn" href="/">Back to Calculator</a>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="nodes">
+        <div class="node" id="nodeBrowser">
+          <div class="node-badge">1. Your Browser</div>
+          <div class="node-title">Calculator UI</div>
+          <div class="node-desc">You enter ID, Password &amp; CAPTCHA. Sent over HTTPS only for this one request.</div>
+        </div>
+        <div class="node" id="nodeServer">
+          <div class="node-badge">2. Flask Server (RAM Only)</div>
+          <div class="node-title">Stateless Bridge</div>
+          <div class="node-desc">No database. No disk writes. Uses a temporary session in RAM, then discards it.</div>
+        </div>
+        <div class="node" id="nodeErp">
+          <div class="node-badge">3. Official KL ERP</div>
+          <div class="node-title">newerp.kluniversity.in</div>
+          <div class="node-desc">Returns your Handout Evaluation Plans &amp; Internal Marks directly to the bridge.</div>
+        </div>
+      </div>
+
+      <div class="packet-bar">
+        <div class="packet-step" id="stepLabel">STEP 1 OF 4</div>
+        <div class="packet-text" id="stepTitle"></div>
+        <div class="packet-detail" id="stepDetail"></div>
+      </div>
+
+      <div class="timeline">
+        <div class="step-pill" onclick="goStep(0)">1. Load CAPTCHA</div>
+        <div class="step-pill" onclick="goStep(1)">2. Live Login (RAM)</div>
+        <div class="step-pill" onclick="goStep(2)">3. Read Plans &amp; Marks</div>
+        <div class="step-pill" onclick="goStep(3)">4. Discarded &amp; Done</div>
+      </div>
+    </div>
+
+    <div class="proof-grid">
+      <div class="proof-card">
+        <h3>No Database or Logs</h3>
+        <p><code>app.py</code> has zero SQL/NoSQL databases and zero file writes. Nothing is saved on the server.</p>
+      </div>
+      <div class="proof-card">
+        <h3>Why CAPTCHA Is Required</h3>
+        <p>We never store or bypass your login—you solve KL ERP's own CAPTCHA every time you fetch.</p>
+      </div>
+      <div class="proof-card">
+        <h3>100% Open Source</h3>
+        <p>Inspect every line on GitHub or run <code>python app.py</code> locally on your own laptop.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STEPS = [
+      {
+        label: 'STEP 1 OF 4 · ANONYMOUS CAPTCHA',
+        title: 'Browser requests a fresh CAPTCHA from KL ERP',
+        detail: 'No ID or password is sent yet. The server only forwards KL ERP’s anonymous CAPTCHA image to your screen.',
+        nodes: ['nodeBrowser', 'nodeErp']
+      },
+      {
+        label: 'STEP 2 OF 4 · SINGLE-REQUEST LOGIN IN RAM',
+        title: 'You click "Fetch & Calculate"',
+        detail: 'Your credentials go over HTTPS to /api/fetch and live only inside Python RAM for this single request.',
+        nodes: ['nodeBrowser', 'nodeServer']
+      },
+      {
+        label: 'STEP 3 OF 4 · HANDOUTS + MARKS FETCHED',
+        title: 'Server reads Handout Evaluation Plans & Internal Marks',
+        detail: 'Fetches Weightage/Max Marks from Handouts, sums question marks (ignoring -1 and -2), and computes totals.',
+        nodes: ['nodeServer', 'nodeErp']
+      },
+      {
+        label: 'STEP 4 OF 4 · DISCARDED FROM MEMORY',
+        title: 'Results sent to your browser — session wiped',
+        detail: 'The moment JSON returns to your browser, the temporary session and password are garbage-collected. Zero data retained.',
+        nodes: ['nodeBrowser', 'nodeServer'],
+        good: true
+      }
+    ];
+
+    let idx = 0;
+    let timer = null;
+
+    function renderStep(i) {
+      idx = i;
+      const s = STEPS[i];
+      document.getElementById('stepLabel').textContent = s.label;
+      document.getElementById('stepTitle').textContent = s.title;
+      document.getElementById('stepDetail').textContent = s.detail;
+
+      ['nodeBrowser', 'nodeServer', 'nodeErp'].forEach(id => {
+        const el = document.getElementById(id);
+        el.classList.remove('active', 'good-active');
+        if (s.nodes.includes(id)) {
+          el.classList.add(s.good ? 'good-active' : 'active');
+        }
+      });
+
+      document.querySelectorAll('.step-pill').forEach((p, pi) => {
+        p.classList.toggle('active', pi === i);
+      });
+    }
+
+    function goStep(i) {
+      clearInterval(timer);
+      renderStep(i);
+      timer = setInterval(() => renderStep((idx + 1) % STEPS.length), 3200);
+    }
+
+    function restartAnimation() {
+      goStep(0);
+    }
+
+    goStep(0);
+  </script>
+</body>
+</html>
