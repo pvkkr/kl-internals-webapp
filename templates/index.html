@@ -6,13 +6,14 @@
   <title>KL ERP Live Internals Calculator</title>
   <style>
     :root {
-      --bg: #0b1020;
-      --surface: #121931;
+      --bg: #070b16;
+      --surface: rgba(18, 25, 49, 0.86);
       --surface-2: #192344;
-      --border: rgba(148, 163, 184, 0.16);
+      --border: rgba(148, 163, 184, 0.18);
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
+      --accent-2: #818cf8;
       --good: #34d399;
       --warn: #fbbf24;
       --danger: #f87171;
@@ -21,23 +22,104 @@
     body {
       margin: 0;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: radial-gradient(circle at top right, #172554 0%, var(--bg) 45%);
+      background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       line-height: 1.5;
+      overflow-x: hidden;
     }
-    .container { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; }
-    header { margin-bottom: 24px; }
-    h1 { margin: 0; font-size: 1.65rem; letter-spacing: -0.02em; }
-    .subtitle { color: var(--muted); font-size: 0.92rem; margin-top: 4px; }
+
+    /* Animated ambient background */
+    .bg-orbs {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .orb {
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(80px);
+      opacity: 0.28;
+      animation: floatOrb 14s ease-in-out infinite alternate;
+    }
+    .orb-1 { width: 380px; height: 380px; background: #0284c7; top: -120px; right: -80px; }
+    .orb-2 { width: 320px; height: 320px; background: #4f46e5; bottom: -100px; left: -90px; animation-delay: -6s; }
+    @keyframes floatOrb {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(-24px, 28px) scale(1.08); }
+    }
+
+    .container { max-width: 1120px; margin: 0 auto; padding: 28px 18px 64px; }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 14px;
+      margin-bottom: 20px;
+      animation: fadeDown 0.5s ease-out;
+    }
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.45rem, 3vw, 1.85rem);
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #f8fafc, #7dd3fc, #a5b4fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+
+    .quick-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+      animation: fadeDown 0.6s ease-out;
+    }
+    .quick-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(25, 35, 68, 0.75);
+      border: 1px solid var(--border);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: transform 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .quick-link:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.14);
+    }
+    .quick-link.insta { border-color: rgba(244, 114, 182, 0.35); }
+    .quick-link.insta:hover { border-color: #f472b6; background: rgba(244, 114, 182, 0.14); }
 
     .login-card {
       background: var(--surface);
+      backdrop-filter: blur(14px);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 22px;
-      margin-bottom: 24px;
+      margin-bottom: 22px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+      animation: fadeUp 0.5s ease-out;
     }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     .form-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -53,25 +135,30 @@
     }
     input, select {
       width: 100%;
-      background: var(--bg);
+      background: rgba(7, 11, 22, 0.85);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 10px 12px;
       font-size: 0.9rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    input:focus, select:focus { outline: none; border-color: var(--accent); }
-    .captcha-box {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
     }
+
+    .captcha-box { display: flex; align-items: center; gap: 10px; }
     .captcha-box img {
       height: 42px;
       border-radius: 8px;
       border: 1px solid var(--border);
       background: #fff;
+      transition: transform 0.2s;
     }
+    .captcha-box img:hover { transform: scale(1.03); }
+
     button {
       background: var(--surface-2);
       color: var(--text);
@@ -81,36 +168,86 @@
       font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
+      transition: transform 0.12s, border-color 0.15s, filter 0.15s;
     }
     button:hover { border-color: var(--accent); }
+    button:active { transform: scale(0.98); }
     button.primary {
       background: linear-gradient(135deg, #0284c7, #4f46e5);
       border-color: transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    button.primary:hover { filter: brightness(1.1); }
+    button:disabled { opacity: 0.7; cursor: not-allowed; }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    button.loading .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .error-msg {
       margin-top: 12px;
       color: var(--danger);
       font-size: 0.88rem;
       display: none;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.25);
     }
+
+    .motivation-banner {
+      display: none;
+      margin-bottom: 18px;
+      padding: 16px 20px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(52, 211, 153, 0.12), rgba(56, 189, 248, 0.12));
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      animation: fadeUp 0.45s ease-out;
+    }
+    .motivation-title {
+      font-weight: 700;
+      font-size: 1.02rem;
+      color: #6ee7b7;
+      margin-bottom: 2px;
+    }
+    .motivation-sub { font-size: 0.88rem; color: var(--text); opacity: 0.9; }
 
     .course-card {
       background: var(--surface);
+      backdrop-filter: blur(12px);
       border: 1px solid var(--border);
       border-radius: 16px;
       margin-bottom: 18px;
       overflow: hidden;
+      opacity: 0;
+      animation: cardEnter 0.45s ease-out forwards;
+      transition: transform 0.2s, border-color 0.2s;
     }
+    .course-card:hover { border-color: rgba(56, 189, 248, 0.35); }
+    @keyframes cardEnter {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     .course-header {
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
-      padding: 16px 20px;
+      padding: 16px 20px 12px;
       background: rgba(255, 255, 255, 0.02);
-      border-bottom: 1px solid var(--border);
     }
     .course-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .code-badge {
@@ -126,20 +263,40 @@
     .course-name { font-weight: 700; font-size: 1.02rem; }
     .course-score { display: flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
     .course-score .big { font-size: 1.35rem; font-weight: 700; color: var(--good); }
-    .course-score .denom { color: var(--muted); font-size: 0.88rem; }
+    .course-score .denom { color: var(--muted); font-size: 0.86rem; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .progress-wrap {
+      padding: 0 20px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .progress-track {
+      width: 100%;
+      height: 7px;
+      background: rgba(148, 163, 184, 0.14);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #38bdf8, #34d399);
+      transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; min-width: 620px; }
     th {
       text-align: left;
       color: var(--muted);
       font-weight: 600;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      padding: 11px 16px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--border);
     }
-    td { padding: 11px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.08); vertical-align: middle; }
+    td { padding: 10px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.08); vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 600; }
@@ -152,13 +309,27 @@
   </style>
 </head>
 <body>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+  </div>
+
   <div class="container">
     <header>
-      <h1>KL ERP Live Internals Calculator</h1>
-      <div class="subtitle">
-        Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v12</span>
+      <div>
+        <h1>KL ERP Live Internals Calculator</h1>
+        <div class="subtitle">
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v13</span>
+        </div>
       </div>
     </header>
+
+    <div class="quick-links">
+      <a class="quick-link" href="https://newerp.kluniversity.in" target="_blank" rel="noopener">KL New ERP</a>
+      <a class="quick-link" href="https://lms.kluniversity.in" target="_blank" rel="noopener">KL LMS</a>
+      <a class="quick-link" href="https://www.kluniversity.in" target="_blank" rel="noopener">KL University</a>
+      <a class="quick-link insta" href="https://www.instagram.com/kluniversityofficial/" target="_blank" rel="noopener">Instagram @kluniversityofficial</a>
+    </div>
 
     <div class="login-card">
       <form id="fetchForm" onsubmit="submitFetch(event)">
@@ -195,20 +366,35 @@
             <input id="captcha" type="text" placeholder="Type code" required />
           </div>
           <div>
-            <button id="submitBtn" class="primary" type="submit" style="width: 100%;">Fetch &amp; Calculate</button>
+            <button id="submitBtn" class="primary" type="submit" style="width: 100%;">
+              <span class="spinner"></span>
+              <span id="btnLabel">Fetch &amp; Calculate</span>
+            </button>
           </div>
         </div>
         <div class="error-msg" id="errorMsg"></div>
       </form>
     </div>
 
-    <div id="resultsHeader" style="display:none; margin-bottom: 14px; color: var(--muted); font-size: 0.92rem;"></div>
+    <div class="motivation-banner" id="motivationBanner">
+      <div class="motivation-title" id="motivationTitle"></div>
+      <div class="motivation-sub" id="motivationSub"></div>
+    </div>
+
     <div id="coursesContainer"></div>
   </div>
 
   <script>
     let currentSessionId = null;
     let loadedCourses = [];
+    let loadingTimer = null;
+
+    const LOADING_STEPS = [
+      'Connecting to KL ERP...',
+      'Reading Handout Evaluation Plans...',
+      'Fetching Internal Marks...',
+      'Calculating your totals...'
+    ];
 
     async function loadCaptcha() {
       const errEl = document.getElementById('errorMsg');
@@ -229,10 +415,18 @@
     async function submitFetch(e) {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
+      const btnLabel = document.getElementById('btnLabel');
       const errEl = document.getElementById('errorMsg');
       errEl.style.display = 'none';
       btn.disabled = true;
-      btn.textContent = 'Fetching from KL ERP...';
+      btn.classList.add('loading');
+
+      let stepIdx = 0;
+      btnLabel.textContent = LOADING_STEPS[0];
+      loadingTimer = setInterval(() => {
+        stepIdx = (stepIdx + 1) % LOADING_STEPS.length;
+        btnLabel.textContent = LOADING_STEPS[stepIdx];
+      }, 1600);
 
       try {
         const res = await fetch('/api/fetch', {
@@ -253,18 +447,16 @@
           throw new Error(data.error || 'Failed to fetch internals');
         }
         loadedCourses = data.courses || [];
-        document.getElementById('resultsHeader').style.display = 'block';
-        document.getElementById('resultsHeader').textContent =
-          `Showing ${loadedCourses.length} credited courses for ${data.student_id} (${data.academic_year} · ${data.semester})` +
-          (data.debug ? ` — Debug: ${JSON.stringify(data.debug)}` : '');
-        renderCourses();
+        renderCourses(data);
         await loadCaptcha();
       } catch (err) {
         errEl.textContent = err.message;
         errEl.style.display = 'block';
       } finally {
+        clearInterval(loadingTimer);
         btn.disabled = false;
-        btn.textContent = 'Fetch & Calculate';
+        btn.classList.remove('loading');
+        btnLabel.textContent = 'Fetch & Calculate';
       }
     }
 
@@ -280,7 +472,39 @@
       renderCourses();
     }
 
-    function renderCourses() {
+    function updateMotivation(meta) {
+      const banner = document.getElementById('motivationBanner');
+      const title = document.getElementById('motivationTitle');
+      const sub = document.getElementById('motivationSub');
+      if (!loadedCourses.length) {
+        banner.style.display = 'none';
+        return;
+      }
+
+      let earned = 0, uploaded = 0;
+      for (const c of loadedCourses) {
+        for (const comp of c.components) {
+          if (comp.raw !== null && comp.raw !== '' && Number(comp.raw) >= 0) {
+            earned += (Number(comp.raw) / comp.maxMarks) * comp.weight;
+            uploaded += comp.weight;
+          }
+        }
+      }
+      const pct = uploaded > 0 ? (earned / uploaded) * 100 : 0;
+      let msg = 'Keep pushing — every mark you add in the remaining components counts!';
+      if (pct >= 88) msg = 'Outstanding momentum! You are crushing your internals — keep this consistency going!';
+      else if (pct >= 75) msg = 'Strong work so far! A focused push on the remaining components will lock in a great grade.';
+      else if (pct >= 60) msg = 'Solid base! Use the editable Raw Marks below to plan what you need next.';
+
+      title.textContent = msg;
+      sub.textContent = meta
+        ? `Loaded ${loadedCourses.length} credited courses for ${meta.student_id} (${meta.academic_year} · ${meta.semester}) · Current uploaded average: ${pct.toFixed(1)}%`
+        : `Current uploaded average across ${loadedCourses.length} courses: ${pct.toFixed(1)}% (you can edit any Raw Marks cell to test targets)`;
+      banner.style.display = 'block';
+    }
+
+    function renderCourses(meta) {
+      updateMotivation(meta);
       const html = loadedCourses.map((course, ci) => {
         let earned = 0, uploadedWeight = 0, totalWeight = 0;
         for (const c of course.components) {
@@ -290,6 +514,7 @@
             uploadedWeight += c.weight;
           }
         }
+        const barPct = totalWeight > 0 ? Math.min(100, (earned / totalWeight) * 100).toFixed(1) : 0;
 
         const rows = course.components.map((comp, ri) => {
           const hasRaw = comp.raw !== null && comp.raw !== '' && Number(comp.raw) >= 0;
@@ -317,7 +542,7 @@
         }).join('');
 
         return `
-          <div class="course-card">
+          <div class="course-card" style="animation-delay: ${ci * 70}ms;">
             <div class="course-header">
               <div class="course-title">
                 <span class="code-badge">${course.code}</span>
@@ -328,25 +553,37 @@
                 <span class="denom">/ ${uploadedWeight} uploaded (${totalWeight} total internal)</span>
               </div>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Evaluation Component</th>
-                  <th>Type</th>
-                  <th class="num">Max Marks</th>
-                  <th class="num">Weightage</th>
-                  <th class="num">Raw Marks</th>
-                  <th class="num">Weighted</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
+            <div class="progress-wrap">
+              <div class="progress-track">
+                <div class="progress-fill" data-width="${barPct}%"></div>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Evaluation Component</th>
+                    <th>Type</th>
+                    <th class="num">Max Marks</th>
+                    <th class="num">Weightage</th>
+                    <th class="num">Raw Marks</th>
+                    <th class="num">Weighted</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
           </div>
         `;
       }).join('');
 
       document.getElementById('coursesContainer').innerHTML = html;
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.progress-fill').forEach(el => {
+          el.style.width = el.dataset.width;
+        });
+      });
     }
 
     loadCaptcha();
