@@ -412,8 +412,11 @@ def fetch_internals():
         login_soup = BeautifulSoup(login_resp.text, "html.parser")
 
         if login_soup.find("input", {"name": "LoginForm[username]"}):
-            errs = [el.get_text(" ", strip=True) for el in login_soup.select(".help-block, .help-block-error, .alert-danger") if el.get_text(strip=True)]
-            err_msg = " | ".join(dict.fromkeys(errs)) if errs else "Invalid ID, password, or CAPTCHA."
+            errs = [el.get_text(" ", strip=True) for el in login_soup.select(".help-block, .help-block-error, .alert-danger, .error-summary") if el.get_text(strip=True)]
+            if errs:
+                err_msg = " | ".join(dict.fromkeys(errs))
+            else:
+                err_msg = f"Login returned {login_resp.status_code} ({login_resp.url}) — please refresh CAPTCHA and check credentials."
             return jsonify({"error": err_msg}), 401
 
         handouts_map = fetch_handouts_map(sess, academic_year, semester)
