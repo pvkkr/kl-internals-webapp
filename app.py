@@ -217,6 +217,19 @@ def parse_component_marks(comp_soup):
     return None
 
 
+def extract_ajax_html(resp):
+    """Handle both raw HTML and Yii2 crudjax JSON responses ({title, content})."""
+    text = resp.text or ""
+    if text.lstrip().startswith("{"):
+        try:
+            payload = resp.json()
+            if isinstance(payload, dict):
+                text = payload.get("content") or payload.get("html") or payload.get("body") or text
+        except ValueError:
+            pass
+    return BeautifulSoup(text, "html.parser")
+
+
 def fetch_handouts_map(session, academic_year, semester):
     soup = submit_year_sem_form(session, HANDOUTS_URL, academic_year, semester)
     handouts = {}
@@ -249,7 +262,7 @@ def fetch_handouts_map(session, academic_year, semester):
             headers={"X-Requested-With": "XMLHttpRequest", "Referer": HANDOUTS_URL},
             timeout=20,
         )
-        h_soup = BeautifulSoup(h_resp.text, "html.parser")
+        h_soup = extract_ajax_html(h_resp)
         plan = parse_evaluation_plan(h_soup)
         if plan:
             handouts[code] = plan
@@ -296,8 +309,12 @@ def fetch_internals_data(session, academic_year, semester, handouts_map):
 
             raw_val = None
             if matched_url:
-                c_resp = session.get(matched_url, timeout=20)
-                c_soup = BeautifulSoup(c_resp.text, "html.parser")
+                c_resp = session.get(
+                    matched_url,
+                    headers={"X-Requested-With": "XMLHttpRequest", "Referer": INTERNALS_URL},
+                    timeout=20,
+                )
+                c_soup = extract_ajax_html(c_resp)
                 raw_val = parse_component_marks(c_soup)
 
             course_components.append(
