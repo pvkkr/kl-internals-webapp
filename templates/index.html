@@ -324,6 +324,46 @@
     .pill-ok { background: rgba(52, 211, 153, 0.15); color: var(--good); }
     input.raw-input { width: 110px; text-align: right; padding: 6px 9px; font-size: 0.88rem; }
     input.raw-input::placeholder { color: #64748b; font-style: italic; }
+
+    .quote-box {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed rgba(148, 163, 184, 0.25);
+      font-style: italic;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .banner-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .print-only { display: none; }
+
+    @media print {
+      body { background: #fff !important; color: #0f172a !important; }
+      .bg-orbs, .quick-links, .login-card, #themeToggle, .banner-actions, #fetchTimerBar { display: none !important; }
+      .print-only { display: block !important; }
+      .container { max-width: 100%; padding: 0; }
+      header { margin-bottom: 12px; }
+      h1 { -webkit-text-fill-color: #0f172a !important; background: none !important; font-size: 1.4rem; }
+      .subtitle { color: #475569 !important; }
+      .motivation-banner { background: #f8fafc !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
+      .motivation-title { color: #059669 !important; }
+      .course-card {
+        background: #fff !important;
+        border: 1px solid #cbd5e1 !important;
+        break-inside: avoid;
+        opacity: 1 !important;
+        animation: none !important;
+        margin-bottom: 14px;
+      }
+      .course-score .big { color: #059669 !important; }
+      .progress-wrap { display: none !important; }
+      input.raw-input { border: none !important; background: transparent !important; color: #0f172a !important; padding: 0; width: auto; }
+      th, td { color: #0f172a !important; border-color: #e2e8f0 !important; }
+    }
   </style>
 </head>
 <body>
@@ -337,7 +377,7 @@
       <div>
         <h1>KL ERP Live Internals Calculator</h1>
         <div class="subtitle">
-          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v17</span>
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v18</span>
         </div>
       </div>
       <button id="themeToggle" type="button" onclick="toggleTheme()" style="white-space:nowrap;">Light Mode</button>
@@ -398,18 +438,36 @@
       </form>
     </div>
 
+    <div class="print-only" id="printHeader" style="margin-bottom: 14px; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 0.9rem;"></div>
+
     <div class="motivation-banner" id="motivationBanner">
       <div class="motivation-title" id="motivationTitle"></div>
       <div class="motivation-sub" id="motivationSub"></div>
+      <div class="quote-box" id="quoteBox"></div>
+      <div class="banner-actions">
+        <button type="button" onclick="printSummary()">Print / Save PDF Summary</button>
+        <button type="button" onclick="copySummary()">Copy Summary</button>
+      </div>
     </div>
 
     <div id="coursesContainer"></div>
+
+    <div class="print-only" id="printFooter" style="margin-top: 18px; padding-top: 12px; border-top: 1px solid #cbd5e1; font-size: 0.85rem; color: #475569; text-align: center;"></div>
   </div>
 
   <script>
     let currentSessionId = null;
     let loadedCourses = [];
+    let loadedMeta = null;
     let loadingTimer = null;
+
+    const QUOTES = [
+      '"Success is the sum of small efforts, repeated day in and day out." — Robert Collier',
+      '"Believe you can and you are halfway there." — Theodore Roosevelt',
+      '"The secret of getting ahead is getting started." — Mark Twain',
+      '"Do not wait for opportunity. Create it."',
+      '"Consistency beats intensity when building great grades."'
+    ];
 
     const LOADING_STEPS = [
       'Connecting to KL ERP...',
@@ -486,7 +544,8 @@
         const totalSecs = ((performance.now() - fetchStart) / 1000).toFixed(1);
         timerBar.textContent = `Fetched ${data.courses.length} courses in ${totalSecs}s`;
         loadedCourses = data.courses || [];
-        renderCourses(data);
+        loadedMeta = { student_id: data.student_id, academic_year: data.academic_year, semester: data.semester };
+        renderCourses(loadedMeta);
         await loadCaptcha();
       } catch (err) {
         timerBar.style.display = 'none';
@@ -536,11 +595,49 @@
       else if (pct >= 75) msg = 'Strong work so far! A focused push on the remaining components will lock in a great grade.';
       else if (pct >= 60) msg = 'Solid base! Use the editable Raw Marks below to plan what you need next.';
 
+      const quote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+      document.getElementById('quoteBox').textContent = quote;
+
       title.textContent = msg;
       sub.textContent = meta
         ? `Loaded ${loadedCourses.length} credited courses for ${meta.student_id} (${meta.academic_year} · ${meta.semester}) · Current uploaded average: ${pct.toFixed(1)}%`
         : `Current uploaded average across ${loadedCourses.length} courses: ${pct.toFixed(1)}% (you can edit any Raw Marks cell to test targets)`;
       banner.style.display = 'block';
+    }
+
+    function printSummary() {
+      const m = loadedMeta || {
+        student_id: document.getElementById('username').value || 'Student',
+        academic_year: document.getElementById('academicYear').value,
+        semester: document.getElementById('semester').value
+      };
+      const nowStr = new Date().toLocaleString();
+      document.getElementById('printHeader').innerHTML =
+        `<strong>Student ID:</strong> ${m.student_id} &nbsp;|&nbsp; ` +
+        `<strong>Academic Year:</strong> ${m.academic_year} (${m.semester}) &nbsp;|&nbsp; ` +
+        `<strong>Generated:</strong> ${nowStr}`;
+      document.getElementById('printFooter').innerHTML =
+        `Thank you for using <strong>KL ERP Live Internals Calculator</strong>! Keep learning, stay consistent, and wish you all the best for your exams. ` +
+        `<br/><em>${document.getElementById('quoteBox').textContent}</em>`;
+      window.print();
+    }
+
+    function copySummary() {
+      const m = loadedMeta || { student_id: 'Student', academic_year: '', semester: '' };
+      const lines = [`KL ERP Internals Summary — ${m.student_id} (${m.academic_year} ${m.semester})`, `Generated: ${new Date().toLocaleString()}`];
+      for (const c of loadedCourses) {
+        let earned = 0, up = 0, tot = 0;
+        for (const comp of c.components) {
+          tot += comp.weight;
+          if (comp.raw !== null && comp.raw !== '' && Number(comp.raw) >= 0) {
+            earned += (Number(comp.raw) / comp.maxMarks) * comp.weight;
+            up += comp.weight;
+          }
+        }
+        lines.push(`${c.code} - ${c.name}: ${earned.toFixed(2)} / ${up} (of ${tot})`);
+      }
+      lines.push('', 'Thank you for using KL ERP Live Internals Calculator!');
+      navigator.clipboard.writeText(lines.join('\n'));
     }
 
     function renderCourses(meta) {
