@@ -69,6 +69,22 @@ class TestKLInternalsParsers(unittest.TestCase):
         self.assertEqual(len(plan), 1)
         self.assertEqual(plan[0], {"name": "ALM", "type": "Formative", "maxMarks": 100.0, "weight": 8.0})
 
+    def test_parse_evaluation_plan_in_sem_short_labels(self):
+        html = """
+        <table>
+          <tr><th>Evaluation Type</th><th>Evaluation Component</th><th colspan="3">Weightage/Marks</th></tr>
+          <tr><td rowspan="2">End Sem Summative</td><td rowspan="2">End Exam</td><td>Weightage</td><td colspan="2">40</td></tr>
+          <tr><td>Max Marks</td><td colspan="2">100</td></tr>
+          <tr><td rowspan="2">In-Sem Formative</td><td rowspan="2">Quiz</td><td>Weightage</td><td colspan="2">10</td></tr>
+          <tr><td>Max Marks</td><td colspan="2">20</td></tr>
+          <tr><td rowspan="2">Summative Evaluation</td><td rowspan="2">Mid-1</td><td>Weightage</td><td colspan="2">20</td></tr>
+          <tr><td>Max Marks</td><td colspan="2">50</td></tr>
+        </table>
+        """
+        plan = webapp.parse_evaluation_plan(BeautifulSoup(html, "html.parser"))
+        names = [c["name"] for c in plan]
+        self.assertEqual(names, ["Quiz", "Mid-1"])
+
     def test_parse_evaluation_plan_with_title_row_and_rowspan(self):
         html = """
         <table>

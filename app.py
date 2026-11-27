@@ -195,7 +195,9 @@ def parse_evaluation_plan(handout_soup):
                 continue
             eval_type = cells[idx_type] if idx_type is not None and idx_type < len(cells) else ""
             eval_norm = re.sub(r"[-\s]+", " ", eval_type.lower())
-            if "in semester" not in eval_norm:
+            if "end semester" in eval_norm or "end sem" in eval_norm or "sem end" in eval_norm:
+                continue
+            if not any(k in eval_norm for k in ("in semester", "in sem", "formative", "summative")):
                 continue
 
             comp_name = cells[idx_comp]
