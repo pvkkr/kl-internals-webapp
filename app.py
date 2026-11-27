@@ -226,73 +226,88 @@ def _parse_eval_rows_by_content(table):
     return [c for c in components.values() if c["maxMarks"] and c["weight"]]
 
 
-def parse_evaluation_plan(handout_soup):
-    """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
-    # Iterate in reverse so innermost Evaluation Plan table is matched before any outer wrapper table
-    for table in reversed(handout_soup.find_all("table")):
-        grid = expand_table_rows(table)
-        if len(grid) < 2:
+def _parse_single_eval_table(table):
+    grid = expand_table_rows(table)
+    if len(grid) < 2:
+        return []
+
+    header_idx = next(
+        (idx for idx, row in enumerate(grid) if any("evaluation component" in c.lower() for c in row)),
+        None,
+    )
+    if header_idx is None:
+        return []
+
+    headers = [h.lower() for h in grid[header_idx]]
+    idx_type = next((i for i, h in enumerate(headers) if "evaluation type" in h), None)
+    idx_comp = next((i for i, h in enumerate(headers) if "evaluation component" in h), None)
+    idx_wm = next((i for i, h in enumerate(headers) if "weightage/marks" in h), None)
+    idx_metric = idx_wm if idx_wm is not None else next((i for i, h in enumerate(headers) if "metric" in h), None)
+    idx_val = (idx_wm + 1) if idx_wm is not None else next((i for i, h in enumerate(headers) if h == "value"), None)
+    if idx_comp is None or idx_metric is None or idx_val is None:
+        return []
+
+    components = {}
+    for cells in grid[header_idx + 1 :]:
+        if len(cells) <= max(idx_comp, idx_metric, idx_val):
+            continue
+        eval_type = cells[idx_type] if idx_type is not None and idx_type < len(cells) else ""
+        eval_norm = re.sub(r"[-\s]+", " ", eval_type.lower())
+        if "end semester" in eval_norm or "end sem" in eval_norm or "sem end" in eval_norm:
+            continue
+        if not any(k in eval_norm for k in ("in semester", "in sem", "formative", "summative")):
             continue
 
-        header_idx = next(
-            (idx for idx, row in enumerate(grid) if any("evaluation component" in c.lower() for c in row)),
-            None,
+        comp_name = cells[idx_comp].strip()
+        if not comp_name:
+            continue
+
+        metric = cells[idx_metric].lower()
+        m_val = re.search(r"[-+]?\d*\.?\d+", cells[idx_val])
+        if not m_val:
+            continue
+        val = float(m_val.group(0))
+
+        entry = components.setdefault(
+            comp_name,
+            {
+                "name": comp_name,
+                "type": "Formative" if "formative" in eval_norm else "Summative",
+                "maxMarks": None,
+                "weight": None,
+            },
         )
-        if header_idx is None:
-            continue
+        if "weight" in metric:
+            entry["weight"] = val
+        elif "max" in metric:
+            entry["maxMarks"] = val
 
-        headers = [h.lower() for h in grid[header_idx]]
-        idx_type = next((i for i, h in enumerate(headers) if "evaluation type" in h), None)
-        idx_comp = next((i for i, h in enumerate(headers) if "evaluation component" in h), None)
-        idx_wm = next((i for i, h in enumerate(headers) if "weightage/marks" in h), None)
-        idx_metric = idx_wm if idx_wm is not None else next((i for i, h in enumerate(headers) if "metric" in h), None)
-        idx_val = (idx_wm + 1) if idx_wm is not None else next((i for i, h in enumerate(headers) if h == "value"), None)
-        if idx_comp is None or idx_metric is None or idx_val is None:
-            continue
+    parsed = [c for c in components.values() if c["maxMarks"] and c["weight"]]
+    if parsed:
+        return parsed
+    return _parse_eval_rows_by_content(table)
 
-        components = {}
-        for cells in grid[header_idx + 1 :]:
-            if len(cells) <= max(idx_comp, idx_metric, idx_val):
-                continue
-            eval_type = cells[idx_type] if idx_type is not None and idx_type < len(cells) else ""
-            eval_norm = re.sub(r"[-\s]+", " ", eval_type.lower())
-            if "end semester" in eval_norm or "end sem" in eval_norm or "sem end" in eval_norm:
-                continue
-            if not any(k in eval_norm for k in ("in semester", "in sem", "formative", "summative")):
-                continue
 
-            comp_name = cells[idx_comp].strip()
-            if not comp_name:
-                continue
+def parse_evaluation_plan(handout_soup, raw_html=""):
+    """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
+    # First isolate the Evaluation Plan <table> directly from raw_html so malformed earlier tables cannot break html.parser
+    if raw_html:
+        m_pos = list(re.finditer(r"evaluation\s+component", raw_html, re.IGNORECASE))
+        for match in reversed(m_pos):
+            t_start = raw_html.lower().rfind("<table", 0, match.start())
+            t_end = raw_html.lower().find("</table>", match.end())
+            if t_start != -1 and t_end != -1:
+                iso_soup = BeautifulSoup(raw_html[t_start : t_end + 8], "html.parser")
+                iso_table = iso_soup.find("table")
+                if iso_table:
+                    parsed = _parse_single_eval_table(iso_table)
+                    if parsed:
+                        return parsed
 
-            metric = cells[idx_metric].lower()
-            m_val = re.search(r"[-+]?\d*\.?\d+", cells[idx_val])
-            if not m_val:
-                continue
-            val = float(m_val.group(0))
-
-            entry = components.setdefault(
-                comp_name,
-                {
-                    "name": comp_name,
-                    "type": "Formative" if "formative" in eval_norm else "Summative",
-                    "maxMarks": None,
-                    "weight": None,
-                },
-            )
-            if "weight" in metric:
-                entry["weight"] = val
-            elif "max" in metric:
-                entry["maxMarks"] = val
-
-        parsed = [c for c in components.values() if c["maxMarks"] and c["weight"]]
+    for table in reversed(handout_soup.find_all("table")):
+        parsed = _parse_single_eval_table(table)
         if parsed:
             return parsed
-
-        # Fallback if broken rowspan shifted grid columns
-        fallback = _parse_eval_rows_by_content(table)
-        if fallback:
-            return fallback
 
     return []
 
@@ -391,7 +406,7 @@ def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None, lo
                 last_info = f"status={h_resp.status_code}, len={len(h_resp.text)}"
                 if h_resp.status_code == 200:
                     h_soup = extract_ajax_html(h_resp)
-                    plan = parse_evaluation_plan(h_soup)
+                    plan = parse_evaluation_plan(h_soup, raw_html=h_resp.text)
                     if plan:
                         return code, plan, last_info
                     last_info += f", tables={len(h_soup.find_all('table'))}"

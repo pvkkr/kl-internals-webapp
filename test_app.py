@@ -120,6 +120,18 @@ class TestKLInternalsParsers(unittest.TestCase):
         plan = webapp.parse_evaluation_plan(BeautifulSoup(html, "html.parser"))
         self.assertEqual(plan, [{"name": "MOOCs Review", "type": "Formative", "maxMarks": 40.0, "weight": 5.0}])
 
+    def test_parse_evaluation_plan_with_broken_earlier_table(self):
+        broken_html = """
+        <table><tr><td><b>Broken unclosed earlier table
+        <table>
+          <tr><th>Evaluation Type</th><th>Evaluation Component</th><th colspan="3">Weightage/Marks</th></tr>
+          <tr><td rowspan="2">In Semester Formative Evaluation</td><td rowspan="2">ALM</td><td>Weightage</td><td colspan="2">6</td></tr>
+          <tr><td>Max Marks</td><td colspan="2">40</td></tr>
+        </table>
+        """
+        plan = webapp.parse_evaluation_plan(BeautifulSoup(broken_html, "html.parser"), raw_html=broken_html)
+        self.assertEqual(plan, [{"name": "ALM", "type": "Formative", "maxMarks": 40.0, "weight": 6.0}])
+
     def test_parse_evaluation_plan_with_title_row_and_rowspan(self):
         html = """
         <table>
