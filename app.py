@@ -168,10 +168,8 @@ def expand_table_rows(table):
 
 def parse_evaluation_plan(handout_soup):
     """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
-    components = {}
-    for table in handout_soup.find_all("table"):
-        if any("evaluation component" in t.get_text(" ", strip=True).lower() for t in table.find_all("table")):
-            continue
+    # Iterate in reverse so innermost Evaluation Plan table is matched before any outer wrapper table
+    for table in reversed(handout_soup.find_all("table")):
         grid = expand_table_rows(table)
         if len(grid) < 2:
             continue
@@ -192,6 +190,7 @@ def parse_evaluation_plan(handout_soup):
         if idx_comp is None or idx_metric is None or idx_val is None:
             continue
 
+        components = {}
         for cells in grid[header_idx + 1 :]:
             if len(cells) <= max(idx_comp, idx_metric, idx_val):
                 continue
@@ -226,7 +225,11 @@ def parse_evaluation_plan(handout_soup):
             elif "max" in metric:
                 entry["maxMarks"] = val
 
-    return [c for c in components.values() if c["maxMarks"] and c["weight"]]
+        parsed = [c for c in components.values() if c["maxMarks"] and c["weight"]]
+        if parsed:
+            return parsed
+
+    return []
 
 
 def parse_component_marks(comp_soup):
