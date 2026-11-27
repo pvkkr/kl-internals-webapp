@@ -90,8 +90,8 @@ class TestKLInternalsParsers(unittest.TestCase):
         <table><tr><td>
           <table>
             <tr><th>Evaluation Type</th><th>Evaluation Component</th><th colspan="3">Weightage/Marks</th></tr>
-            <tr><td>In Semester Formative</td><td>ALM</td><td>Weightage</td><td colspan="2">6 %</td></tr>
-            <tr><td></td><td></td><td>Max Marks</td><td colspan="2">40</td></tr>
+            <tr><td rowspan="2">In Semester Formative</td><td rowspan="2">ALM</td><td>Weightage</td><td colspan="2">6 %</td></tr>
+            <tr><td>Max Marks</td><td colspan="2">40</td></tr>
           </table>
         </td></tr></table>
         """

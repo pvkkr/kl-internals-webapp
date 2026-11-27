@@ -414,7 +414,7 @@
       <div>
         <h1>KL ERP Live Internals Calculator</h1>
         <div class="subtitle">
-          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v30</span>
+          Fetches your Course Handout Evaluation Plans &amp; Internal Marks directly from KL ERP (negative marks ignored; credentials are never stored). <span style="opacity:0.6">· v31</span>
         </div>
       </div>
       <button id="themeToggle" type="button" onclick="toggleTheme()" style="white-space:nowrap;">Light Mode</button>
@@ -630,6 +630,11 @@
             }
           }
         }
+        if (buf.trim()) {
+          const evt = JSON.parse(buf.trim());
+          if (evt.type === 'done') finalData = evt;
+          else if (evt.type === 'error') throw new Error(evt.error || 'Failed to fetch internals');
+        }
 
         if (!finalData) throw new Error('Stream ended unexpectedly.');
         const totalSecs = ((performance.now() - fetchStart) / 1000).toFixed(1);
@@ -637,6 +642,10 @@
         loadedCourses = finalData.courses || [];
         loadedMeta = { student_id: finalData.student_id, academic_year: finalData.academic_year, semester: finalData.semester };
         renderCourses(loadedMeta);
+        if (!loadedCourses.length) {
+          errEl.textContent = '0 credited courses were returned for this Academic Year / Semester. Check the log above for details.';
+          errEl.style.display = 'block';
+        }
         await loadCaptcha();
       } catch (err) {
         appendTerm('ERROR: ' + err.message);

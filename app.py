@@ -170,6 +170,8 @@ def parse_evaluation_plan(handout_soup):
     """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
     components = {}
     for table in handout_soup.find_all("table"):
+        if any("evaluation component" in t.get_text(" ", strip=True).lower() for t in table.find_all("table")):
+            continue
         grid = expand_table_rows(table)
         if len(grid) < 2:
             continue
