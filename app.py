@@ -304,15 +304,24 @@ def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None):
 
     def _fetch_one(item):
         code, h_url = item
-        h_resp = session.get(
-            h_url,
-            headers={"X-Requested-With": "XMLHttpRequest", "Referer": HANDOUTS_URL},
-            timeout=20,
-        )
-        return code, parse_evaluation_plan(extract_ajax_html(h_resp))
+        for attempt in range(2):
+            try:
+                h_resp = session.get(
+                    h_url,
+                    headers={"X-Requested-With": "XMLHttpRequest", "Referer": HANDOUTS_URL},
+                    timeout=20,
+                )
+                if h_resp.status_code == 200:
+                    plan = parse_evaluation_plan(extract_ajax_html(h_resp))
+                    if plan:
+                        return code, plan
+            except requests.RequestException:
+                pass
+            time.sleep(0.3)
+        return code, []
 
     if targets:
-        with ThreadPoolExecutor(max_workers=min(10, len(targets))) as pool:
+        with ThreadPoolExecutor(max_workers=min(4, len(targets))) as pool:
             for code, plan in pool.map(_fetch_one, targets):
                 if plan:
                     handouts[code] = plan
@@ -371,15 +380,22 @@ def fetch_internals_data(session, academic_year, semester, handouts_map, preload
 
     def _fetch_comp(job):
         ci, ri, url = job
-        c_resp = session.get(
-            url,
-            headers={"X-Requested-With": "XMLHttpRequest", "Referer": INTERNALS_URL},
-            timeout=20,
-        )
-        return ci, ri, parse_component_marks(extract_ajax_html(c_resp))
+        for attempt in range(2):
+            try:
+                c_resp = session.get(
+                    url,
+                    headers={"X-Requested-With": "XMLHttpRequest", "Referer": INTERNALS_URL},
+                    timeout=20,
+                )
+                if c_resp.status_code == 200:
+                    return ci, ri, parse_component_marks(extract_ajax_html(c_resp))
+            except requests.RequestException:
+                pass
+            time.sleep(0.25)
+        return ci, ri, None
 
     if fetch_jobs:
-        with ThreadPoolExecutor(max_workers=min(12, len(fetch_jobs))) as pool:
+        with ThreadPoolExecutor(max_workers=min(6, len(fetch_jobs))) as pool:
             for ci, ri, raw_val in pool.map(_fetch_comp, fetch_jobs):
                 if raw_val is not None:
                     courses[ci]["components"][ri]["raw"] = raw_val
