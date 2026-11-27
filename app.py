@@ -284,7 +284,7 @@ def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None):
         if len(cells) < 4:
             continue
         texts = [c.get_text(strip=True) for c in cells]
-        code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{2,5}[0-9]{2,4}[A-Z0-9]*$", t)), None)
+        code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{1,6}[0-9]{2,5}[A-Z0-9-]*$", t)), None)
         if not code:
             continue
         raw_href = ""
@@ -339,7 +339,7 @@ def fetch_internals_data(session, academic_year, semester, handouts_map, preload
         if len(cells) < 5:
             continue
         texts = [c.get_text(strip=True) for c in cells]
-        code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{2,5}[0-9]{2,4}[A-Z0-9]*$", t)), None)
+        code = next((t for t in texts if re.match(r"^[0-9]{2}[A-Z]{1,6}[0-9]{2,5}[A-Z0-9-]*$", t)), None)
         if not code or code not in handouts_map:
             continue
 
