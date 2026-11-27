@@ -140,14 +140,15 @@ def submit_year_sem_form(session, url, academic_year, semester):
 
 
 def expand_table_rows(table):
-    """Expand rowspan/colspan into a normalized 2D list of cell texts."""
+    """Expand rowspan/colspan into a normalized 2D list of cell texts (direct rows/cells only)."""
     grid = []
     spans = {}  # (row_idx, col_idx) -> text
-    rows = table.find_all("tr")
+    rows = [tr for tr in table.find_all("tr") if tr.find_parent("table") == table]
     for r_idx, tr in enumerate(rows):
         row_cells = []
         c_idx = 0
-        for cell in tr.find_all(["th", "td"]):
+        direct_cells = [c for c in tr.find_all(["th", "td"]) if c.find_parent("tr") == tr]
+        for cell in direct_cells:
             while (r_idx, c_idx) in spans:
                 row_cells.append(spans.pop((r_idx, c_idx)))
                 c_idx += 1
@@ -170,6 +171,10 @@ def parse_evaluation_plan(handout_soup):
     """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
     components = {}
     for table in handout_soup.find_all("table"):
+        # Skip outer wrapper tables when an inner table holds Evaluation Component
+        if any("evaluation component" in t.get_text(" ", strip=True).lower() for t in table.find_all("table")):
+            continue
+
         grid = expand_table_rows(table)
         if len(grid) < 2:
             continue
@@ -190,22 +195,33 @@ def parse_evaluation_plan(handout_soup):
         if idx_comp is None or idx_metric is None or idx_val is None:
             continue
 
+        last_eval_type = ""
+        last_comp_name = ""
         for cells in grid[header_idx + 1 :]:
             if len(cells) <= max(idx_comp, idx_metric, idx_val):
                 continue
-            eval_type = cells[idx_type] if idx_type is not None and idx_type < len(cells) else ""
+            raw_eval_type = cells[idx_type].strip() if idx_type is not None and idx_type < len(cells) else ""
+            if raw_eval_type:
+                last_eval_type = raw_eval_type
+            eval_type = raw_eval_type or last_eval_type
             eval_norm = re.sub(r"[-\s]+", " ", eval_type.lower())
             if "end semester" in eval_norm or "end sem" in eval_norm or "sem end" in eval_norm:
                 continue
             if not any(k in eval_norm for k in ("in semester", "in sem", "formative", "summative")):
                 continue
 
-            comp_name = cells[idx_comp]
-            metric = cells[idx_metric].lower()
-            try:
-                val = float(cells[idx_val])
-            except ValueError:
+            raw_comp = cells[idx_comp].strip()
+            if raw_comp:
+                last_comp_name = raw_comp
+            comp_name = raw_comp or last_comp_name
+            if not comp_name:
                 continue
+
+            metric = cells[idx_metric].lower()
+            m_val = re.search(r"[-+]?\d*\.?\d+", cells[idx_val])
+            if not m_val:
+                continue
+            val = float(m_val.group(0))
 
             entry = components.setdefault(
                 comp_name,

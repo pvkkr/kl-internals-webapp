@@ -85,6 +85,19 @@ class TestKLInternalsParsers(unittest.TestCase):
         names = [c["name"] for c in plan]
         self.assertEqual(names, ["Quiz", "Mid-1"])
 
+    def test_parse_evaluation_plan_nested_wrapper_table(self):
+        html = """
+        <table><tr><td>
+          <table>
+            <tr><th>Evaluation Type</th><th>Evaluation Component</th><th colspan="3">Weightage/Marks</th></tr>
+            <tr><td>In Semester Formative</td><td>ALM</td><td>Weightage</td><td colspan="2">6 %</td></tr>
+            <tr><td></td><td></td><td>Max Marks</td><td colspan="2">40</td></tr>
+          </table>
+        </td></tr></table>
+        """
+        plan = webapp.parse_evaluation_plan(BeautifulSoup(html, "html.parser"))
+        self.assertEqual(plan, [{"name": "ALM", "type": "Formative", "maxMarks": 40.0, "weight": 6.0}])
+
     def test_parse_evaluation_plan_with_title_row_and_rowspan(self):
         html = """
         <table>
