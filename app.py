@@ -274,7 +274,7 @@ def extract_ajax_html(resp):
     return BeautifulSoup(text, "html.parser")
 
 
-def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None):
+def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None, log_fn=None):
     soup = preloaded_soup if preloaded_soup is not None else submit_year_sem_form(session, HANDOUTS_URL, academic_year, semester)
     handouts = {}
     targets = []
@@ -302,29 +302,38 @@ def fetch_handouts_map(session, academic_year, semester, preloaded_soup=None):
             continue
         targets.append((code, urljoin(HANDOUTS_URL, raw_href)))
 
+    if log_fn:
+        log_fn(f"Handout list ({len(targets)}): {[c for c, _ in targets]}")
+
     def _fetch_one(item):
         code, h_url = item
-        for attempt in range(2):
+        last_info = "unknown"
+        for attempt in range(3):
             try:
                 h_resp = session.get(
                     h_url,
                     headers={"X-Requested-With": "XMLHttpRequest", "Referer": HANDOUTS_URL},
                     timeout=20,
                 )
+                last_info = f"status={h_resp.status_code}, len={len(h_resp.text)}"
                 if h_resp.status_code == 200:
-                    plan = parse_evaluation_plan(extract_ajax_html(h_resp))
+                    h_soup = extract_ajax_html(h_resp)
+                    plan = parse_evaluation_plan(h_soup)
                     if plan:
-                        return code, plan
-            except requests.RequestException:
-                pass
-            time.sleep(0.3)
-        return code, []
+                        return code, plan, last_info
+                    last_info += f", tables={len(h_soup.find_all('table'))}"
+            except requests.RequestException as exc:
+                last_info = str(exc)
+            time.sleep(0.4)
+        return code, [], last_info
 
     if targets:
-        with ThreadPoolExecutor(max_workers=min(4, len(targets))) as pool:
-            for code, plan in pool.map(_fetch_one, targets):
+        with ThreadPoolExecutor(max_workers=min(3, len(targets))) as pool:
+            for code, plan, info in pool.map(_fetch_one, targets):
                 if plan:
                     handouts[code] = plan
+                elif log_fn:
+                    log_fn(f"WARNING: Handout {code} parsed 0 components ({info})")
 
     return handouts
 
@@ -619,8 +628,11 @@ def fetch_internals_stream():
                 h_soup = f_h.result()
                 i_soup = f_i.result()
 
-            yield _event("log", {"msg": f"[{ts()}] Extracting Evaluation Plans from Course Handouts in parallel..."})
-            handouts_map = fetch_handouts_map(sess, academic_year, semester, preloaded_soup=h_soup)
+            yield _event("log", {"msg": f"[{ts()}] Extracting Evaluation Plans from Course Handouts..."})
+            handout_logs = []
+            handouts_map = fetch_handouts_map(sess, academic_year, semester, preloaded_soup=h_soup, log_fn=handout_logs.append)
+            for lmsg in handout_logs:
+                yield _event("log", {"msg": f"[{ts()}] {lmsg}"})
             for code, plan in handouts_map.items():
                 yield _event("log", {"msg": f"[{ts()}] Loaded Handout {code} ({len(plan)} internal components)"})
 
