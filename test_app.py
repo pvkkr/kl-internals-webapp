@@ -98,6 +98,28 @@ class TestKLInternalsParsers(unittest.TestCase):
         plan = webapp.parse_evaluation_plan(BeautifulSoup(html, "html.parser"))
         self.assertEqual(plan, [{"name": "ALM", "type": "Formative", "maxMarks": 40.0, "weight": 6.0}])
 
+    def test_parse_evaluation_plan_broken_rowspan_fallback(self):
+        # End Semester has rowspan="6" (too large!), shifting subsequent rows in grid
+        html = """
+        <table>
+          <tr><th>Evaluation Type</th><th>Evaluation Component</th><th colspan="3">Weightage/Marks</th></tr>
+          <tr>
+            <td rowspan="6">End Semester Summative Evaluation</td>
+            <td rowspan="2">End Semester Exam</td>
+            <td>Weightage</td><td colspan="2">24</td>
+          </tr>
+          <tr><td>Max Marks</td><td colspan="2">100</td></tr>
+          <tr>
+            <td rowspan="4">In Semester Formative Evaluation</td>
+            <td rowspan="2">MOOCs Review</td>
+            <td>Weightage</td><td colspan="2">5</td>
+          </tr>
+          <tr><td>Max Marks</td><td colspan="2">40</td></tr>
+        </table>
+        """
+        plan = webapp.parse_evaluation_plan(BeautifulSoup(html, "html.parser"))
+        self.assertEqual(plan, [{"name": "MOOCs Review", "type": "Formative", "maxMarks": 40.0, "weight": 5.0}])
+
     def test_parse_evaluation_plan_with_title_row_and_rowspan(self):
         html = """
         <table>

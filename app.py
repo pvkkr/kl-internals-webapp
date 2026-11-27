@@ -166,6 +166,66 @@ def expand_table_rows(table):
     return grid
 
 
+def _parse_eval_rows_by_content(table):
+    """Fallback parser resilient to broken rowspan attributes in KL ERP handouts."""
+    components = {}
+    current_eval_type = ""
+    current_comp = ""
+
+    for tr in table.find_all("tr"):
+        cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"]) if c.get_text(strip=True)]
+        if not cells:
+            continue
+        row_lower = [c.lower() for c in cells]
+        if any("evaluation component" in c for c in row_lower):
+            continue
+
+        for c in cells:
+            cl = re.sub(r"[-\s]+", " ", c.lower())
+            if any(k in cl for k in ("end semester", "in semester", "formative evaluation", "summative evaluation")):
+                current_eval_type = cl
+
+        metric_idx = next((i for i, c in enumerate(row_lower) if c in ("weightage", "max marks")), None)
+        if metric_idx is None or metric_idx + 1 >= len(cells):
+            continue
+
+        # Component name is the cell right before Weightage (if not the eval-type banner)
+        if metric_idx > 0:
+            cand = cells[metric_idx - 1].strip()
+            cand_l = re.sub(r"[-\s]+", " ", cand.lower())
+            if cand and not any(k in cand_l for k in ("end semester", "in semester", "formative evaluation", "summative evaluation")):
+                current_comp = cand
+
+        if not current_comp:
+            continue
+        if any(k in current_eval_type for k in ("end semester", "end sem", "sem end")):
+            continue
+        comp_l = current_comp.lower()
+        if "end sem" in comp_l or "end semester" in comp_l:
+            continue
+
+        m_val = re.search(r"[-+]?\d*\.?\d+", cells[metric_idx + 1])
+        if not m_val:
+            continue
+        val = float(m_val.group(0))
+
+        entry = components.setdefault(
+            current_comp,
+            {
+                "name": current_comp,
+                "type": "Formative" if "formative" in current_eval_type else "Summative",
+                "maxMarks": None,
+                "weight": None,
+            },
+        )
+        if row_lower[metric_idx] == "weightage":
+            entry["weight"] = val
+        else:
+            entry["maxMarks"] = val
+
+    return [c for c in components.values() if c["maxMarks"] and c["weight"]]
+
+
 def parse_evaluation_plan(handout_soup):
     """Extract In-Semester (internal) Evaluation Plan components from a handout page."""
     # Iterate in reverse so innermost Evaluation Plan table is matched before any outer wrapper table
@@ -228,6 +288,11 @@ def parse_evaluation_plan(handout_soup):
         parsed = [c for c in components.values() if c["maxMarks"] and c["weight"]]
         if parsed:
             return parsed
+
+        # Fallback if broken rowspan shifted grid columns
+        fallback = _parse_eval_rows_by_content(table)
+        if fallback:
+            return fallback
 
     return []
 
